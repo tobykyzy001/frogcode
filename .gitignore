@@ -1,0 +1,19 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+.turbo
+
+# Test coverage
+coverage
+
+# IDE
+.idea
+.vscode
+
+# Opencode working directory
+.sisyphus
+
+# TypeScript build info
+*.tsbuildinfo

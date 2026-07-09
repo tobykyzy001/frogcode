@@ -14,6 +14,14 @@ coverage
 
 # Opencode working directory
 .sisyphus
+.opencode
+
+# Project planning (internal)
+ROADMAP.md
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo

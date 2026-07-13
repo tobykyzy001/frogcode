@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { isRetryableError } from "./errors.js";
 import type { EventStore } from "./event-store/types.js";
 import type { ExecutionContext } from "./execution-context.js";
-import type {
-  PRAOHandlers,
-  ReasonResult,
-} from "./handlers/types.js";
+import type { PRAOHandlers, ReasonResult } from "./handlers/types.js";
 import type { AgentStateMachine } from "./state-machine.js";
 import type { AgentInput, AgentOutput } from "./types/agent.js";
 import type { AgentConfig } from "./types/config.js";
@@ -222,6 +220,26 @@ export class ExecutionLoop {
           await this.eventStore.append(record);
           throw error;
         }
+
+        // Error classification: non-retryable errors fail immediately
+        const classifier =
+          this.config.retryableErrorClassifier ?? isRetryableError;
+        if (!classifier(error, attempt + 1)) {
+          const duration = Date.now() - start;
+          const record = this.#createFailedRecord(
+            agentId,
+            type,
+            input,
+            start,
+            duration,
+            attempt + 1,
+            error,
+          );
+          this.#accumulatedSteps.push(record);
+          await this.eventStore.append(record);
+          throw error;
+        }
+        // Retryable: continue to next attempt
       }
     }
 

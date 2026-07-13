@@ -10,7 +10,7 @@ import {
 import { createMockHandlers } from "../src/handlers/mock.js";
 import { FileEventStore } from "../src/event-store/file.js";
 import { ExecutionContext } from "../src/execution-context.js";
-import { AgentStateMachine } from "../src/state-machine.js";
+import { AgentStateMachine, InvalidStateTransitionError } from "../src/state-machine.js";
 import { createAgentConfig } from "../src/types/config.js";
 import type { AgentInput } from "../src/types/agent.js";
 import type { PRAOHandlers } from "../src/handlers/types.js";
@@ -638,5 +638,250 @@ describe("ExecutionLoop", () => {
     for (const id of ids) {
       expect(id).toMatch(/^step-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     }
+  });
+
+  describe("error classification in #runStep", () => {
+    function makePassThroughHandlers(): PRAOHandlers {
+      return {
+        perceive: {
+          async perceive(input: AgentInput) {
+            return { rawInput: input.prompt };
+          },
+        },
+        reason: {
+          async reason() {
+            return { action: "test", done: true };
+          },
+        },
+        act: {
+          async act() {
+            return { result: "done" };
+          },
+        },
+        observe: {
+          async observe() {
+            return { content: "observed" };
+          },
+        },
+      };
+    }
+
+    it("Test A: TypeError is not retried — immediately fails with status: failed", async () => {
+      let actCalls = 0;
+      const throwingHandlers: PRAOHandlers = {
+        ...makePassThroughHandlers(),
+        act: {
+          async act() {
+            actCalls++;
+            throw new TypeError("bad argument");
+          },
+        },
+      };
+      const retryConfig = createAgentConfig({
+        name: "test",
+        maxSteps: 1,
+        maxRetries: 3,
+      });
+      const store = new FileEventStore(tempDir);
+      const loop = new ExecutionLoop(
+        throwingHandlers,
+        store,
+        retryConfig,
+        makeStateMachine(),
+      );
+      await expect(
+        loop.run({ prompt: "test" }, makeCtx("typeerror-agent")),
+      ).rejects.toThrow(TypeError);
+
+      expect(actCalls).toBe(1);
+
+      const records = await store.getAll("typeerror-agent");
+      const failedStep = records.find((r) => r.metadata.status === "failed");
+      expect(failedStep).toBeDefined();
+      expect(failedStep?.type).toBe("act");
+      expect(failedStep?.metadata.attempt).toBe(1);
+      expect(failedStep?.metadata.errorName).toBe("TypeError");
+    });
+
+    it("Test B: InvalidStateTransitionError is not retried", async () => {
+      let actCalls = 0;
+      const throwingHandlers: PRAOHandlers = {
+        ...makePassThroughHandlers(),
+        act: {
+          async act() {
+            actCalls++;
+            throw new InvalidStateTransitionError("idle", "running");
+          },
+        },
+      };
+      const retryConfig = createAgentConfig({
+        name: "test",
+        maxSteps: 1,
+        maxRetries: 3,
+      });
+      const store = new FileEventStore(tempDir);
+      const loop = new ExecutionLoop(
+        throwingHandlers,
+        store,
+        retryConfig,
+        makeStateMachine(),
+      );
+      await expect(
+        loop.run({ prompt: "test" }, makeCtx("ist-agent")),
+      ).rejects.toThrow(InvalidStateTransitionError);
+
+      expect(actCalls).toBe(1);
+
+      const records = await store.getAll("ist-agent");
+      const failedStep = records.find((r) => r.metadata.status === "failed");
+      expect(failedStep).toBeDefined();
+      expect(failedStep?.type).toBe("act");
+      expect(failedStep?.metadata.attempt).toBe(1);
+      expect(failedStep?.metadata.errorName).toBe("InvalidStateTransitionError");
+    });
+
+    it("Test C: StepTimeoutError on first attempt IS retried, then succeeds", async () => {
+      let actCalls = 0;
+      const flakySlowHandlers: PRAOHandlers = {
+        ...makePassThroughHandlers(),
+        act: {
+          async act() {
+            actCalls++;
+            if (actCalls === 1) {
+              await delay(200);
+            }
+            return { result: "success" };
+          },
+        },
+      };
+      const timeoutRetryConfig = createAgentConfig({
+        name: "test",
+        maxSteps: 1,
+        stepTimeoutMs: 50,
+        maxRetries: 3,
+      });
+      const loop = new ExecutionLoop(
+        flakySlowHandlers,
+        new FileEventStore(tempDir),
+        timeoutRetryConfig,
+        makeStateMachine(),
+      );
+      const result = await loop.run({ prompt: "test" }, makeCtx());
+
+      expect(actCalls).toBeGreaterThanOrEqual(2);
+
+      const actStep = result.steps.find((s) => s.type === "act");
+      expect(actStep?.metadata.status).toBe("completed");
+      expect(actStep?.metadata.attempt).toBe(2);
+    });
+
+    it("Test D: StepTimeoutError persistent (attempt >= 2) is NOT retried", async () => {
+      let actCalls = 0;
+      const alwaysSlowHandlers: PRAOHandlers = {
+        ...makePassThroughHandlers(),
+        act: {
+          async act() {
+            actCalls++;
+            await delay(200);
+            return { result: "never" };
+          },
+        },
+      };
+      const timeoutRetryConfig = createAgentConfig({
+        name: "test",
+        maxSteps: 1,
+        stepTimeoutMs: 50,
+        maxRetries: 3,
+      });
+      const store = new FileEventStore(tempDir);
+      const loop = new ExecutionLoop(
+        alwaysSlowHandlers,
+        store,
+        timeoutRetryConfig,
+        makeStateMachine(),
+      );
+      await expect(
+        loop.run({ prompt: "test" }, makeCtx("persistent-timeout-agent")),
+      ).rejects.toThrow(StepTimeoutError);
+
+      // Should be called at most 2 times: first attempt retryable, second not.
+      expect(actCalls).toBeLessThanOrEqual(2);
+
+      const records = await store.getAll("persistent-timeout-agent");
+      const failedStep = records.find((r) => r.metadata.status === "failed");
+      expect(failedStep).toBeDefined();
+      expect(failedStep?.type).toBe("act");
+      expect(failedStep?.metadata.attempt).toBeLessThanOrEqual(2);
+      expect(failedStep?.metadata.errorName).toBe("StepTimeoutError");
+    });
+
+    it("Test E: custom retryableErrorClassifier overrides default (nothing retryable)", async () => {
+      let actCalls = 0;
+      const throwingHandlers: PRAOHandlers = {
+        ...makePassThroughHandlers(),
+        act: {
+          async act() {
+            actCalls++;
+            throw new Error("generic");
+          },
+        },
+      };
+      const customConfig = createAgentConfig({
+        name: "test",
+        maxSteps: 1,
+        maxRetries: 3,
+        retryableErrorClassifier: () => false,
+      });
+      const store = new FileEventStore(tempDir);
+      const loop = new ExecutionLoop(
+        throwingHandlers,
+        store,
+        customConfig,
+        makeStateMachine(),
+      );
+      await expect(
+        loop.run({ prompt: "test" }, makeCtx("never-retry-agent")),
+      ).rejects.toThrow("generic");
+
+      expect(actCalls).toBe(1);
+
+      const records = await store.getAll("never-retry-agent");
+      const failedStep = records.find((r) => r.metadata.status === "failed");
+      expect(failedStep).toBeDefined();
+      expect(failedStep?.metadata.attempt).toBe(1);
+    });
+
+    it("Test F: custom retryableErrorClassifier makes TypeError retryable", async () => {
+      let actCalls = 0;
+      const throwingHandlers: PRAOHandlers = {
+        ...makePassThroughHandlers(),
+        act: {
+          async act() {
+            actCalls++;
+            if (actCalls < 3) throw new TypeError("bad");
+            return { result: "recovered" };
+          },
+        },
+      };
+      const customConfig = createAgentConfig({
+        name: "test",
+        maxSteps: 1,
+        maxRetries: 3,
+        retryableErrorClassifier: () => true,
+      });
+      const loop = new ExecutionLoop(
+        throwingHandlers,
+        new FileEventStore(tempDir),
+        customConfig,
+        makeStateMachine(),
+      );
+      const result = await loop.run({ prompt: "test" }, makeCtx());
+
+      expect(actCalls).toBe(3);
+
+      const actStep = result.steps.find((s) => s.type === "act");
+      expect(actStep?.metadata.status).toBe("completed");
+      expect(actStep?.metadata.attempt).toBe(3);
+    });
   });
 });

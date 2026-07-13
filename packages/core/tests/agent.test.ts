@@ -1,21 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Agent } from "../src/agent.js";
 import { AgentAbortedError } from "../src/execution-loop.js";
 import { InvalidStateTransitionError } from "../src/state-machine.js";
-import { InMemoryEventStore } from "../src/event-store/in-memory.js";
+import { FileEventStore } from "../src/event-store/file.js";
 import { createMockHandlers } from "../src/handlers/mock.js";
 import { createAgentConfig } from "../src/types/config.js";
 import type { AgentInput } from "../src/types/agent.js";
 import type { PRAOHandlers } from "../src/handlers/types.js";
 
+let tempDir: string;
+
+beforeEach(async () => {
+  tempDir = await mkdtemp(join(tmpdir(), "frogcode-test-"));
+});
+
+afterEach(async () => {
+  if (tempDir) {
+    await rm(tempDir, { recursive: true, force: true });
+    tempDir = "" as string;
+  }
+});
+
 describe("Agent", () => {
   it("starts in idle state", () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     expect(agent.state).toBe("idle");
   });
 
   it("transitions to running then completed on run()", async () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     expect(agent.state).toBe("idle");
     const result = await agent.run({ prompt: "hello" });
     expect(agent.state).toBe("completed");
@@ -23,7 +39,7 @@ describe("Agent", () => {
   });
 
   it("returns AgentOutput with steps containing observe result", async () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     const result = await agent.run({ prompt: "hello world" });
     const observeStep = result.steps.find((s) => s.type === "observe");
     expect(observeStep).toBeDefined();
@@ -33,14 +49,22 @@ describe("Agent", () => {
   });
 
   it("produces steps with correct type sequence", async () => {
-    const agent = Agent.create({ name: "test", maxSteps: 1 });
+    const agent = Agent.create({
+      name: "test",
+      maxSteps: 1,
+      eventsBasePath: tempDir,
+    });
     const result = await agent.run({ prompt: "test" });
     const types = result.steps.map((s) => s.type);
     expect(types).toEqual(["perceive", "reason", "act", "observe"]);
   });
 
   it("serializes and deserializes StepRecord", async () => {
-    const agent = Agent.create({ name: "test", maxSteps: 1 });
+    const agent = Agent.create({
+      name: "test",
+      maxSteps: 1,
+      eventsBasePath: tempDir,
+    });
     const result = await agent.run({ prompt: "test" });
     for (const step of result.steps) {
       const serialized = JSON.stringify(step);
@@ -52,18 +76,22 @@ describe("Agent", () => {
   });
 
   it("throws InvalidStateTransitionError on pause() from idle", () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     expect(() => agent.pause()).toThrow(InvalidStateTransitionError);
   });
 
   it("Agent.create() factory method works", () => {
-    const agent = Agent.create({ name: "factory-test" });
+    const agent = Agent.create({ name: "factory-test", eventsBasePath: tempDir });
     expect(agent.config.name).toBe("factory-test");
     expect(agent.state).toBe("idle");
   });
 
   it("done signal overrides maxSteps", async () => {
-    const agent = Agent.create({ name: "test", maxSteps: 10 });
+    const agent = Agent.create({
+      name: "test",
+      maxSteps: 10,
+      eventsBasePath: tempDir,
+    });
     const result = await agent.run({ prompt: "test" });
     expect(result.steps).toHaveLength(4);
   });
@@ -97,45 +125,49 @@ describe("Agent", () => {
       name: "test",
       maxSteps: 2,
       handlers: noDoneHandlers,
+      eventsBasePath: tempDir,
     });
     const result = await agent.run({ prompt: "test" });
     expect(result.steps).toHaveLength(8);
   });
 
   it("records steps in shared EventStore", async () => {
-    const eventStore = new InMemoryEventStore();
+    const eventStore = new FileEventStore(tempDir);
     const agent = new Agent({
       id: "event-test",
-      config: createAgentConfig({ name: "test", maxSteps: 1 }),
-      eventStore,
+      config: createAgentConfig({
+        name: "test",
+        maxSteps: 1,
+        eventsBasePath: tempDir,
+      }),
     });
     await agent.run({ prompt: "test" });
     const records = await eventStore.getAll("event-test");
     expect(records).toHaveLength(4);
   });
 
-  it("Agent.create() accepts handlers and eventStore", async () => {
-    const eventStore = new InMemoryEventStore();
+  it("Agent.create() accepts handlers and eventsBasePath", async () => {
     const handlers = createMockHandlers();
     const agent = Agent.create({
       name: "test",
       handlers,
-      eventStore,
+      eventsBasePath: tempDir,
     });
     await agent.run({ prompt: "test" });
+    const eventStore = new FileEventStore(tempDir);
     const records = await eventStore.getAll(agent.id);
     expect(records.length).toBeGreaterThan(0);
   });
 
   it("generates unique agent IDs using UUID", () => {
-    const agent1 = Agent.create({ name: "test1" });
-    const agent2 = Agent.create({ name: "test2" });
+    const agent1 = Agent.create({ name: "test1", eventsBasePath: tempDir });
+    const agent2 = Agent.create({ name: "test2", eventsBasePath: tempDir });
     expect(agent1.id).not.toBe(agent2.id);
     expect(agent1.id).toMatch(/^agent-[0-9a-f]{8}-[0-9a-f]{4}-/);
   });
 
   it("run() throws when agent is not idle", async () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     await agent.run({ prompt: "first" });
     expect(agent.state).toBe("completed");
     await expect(agent.run({ prompt: "again" })).rejects.toThrow(
@@ -185,7 +217,11 @@ describe("Agent pause/resume during execution", () => {
     const handlers = createPausingHandlers(() => agent);
     agent = new Agent({
       id: "pause-during-run",
-      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      config: createAgentConfig({
+        name: "test",
+        maxSteps: 3,
+        eventsBasePath: tempDir,
+      }),
       handlers,
     });
 
@@ -202,7 +238,11 @@ describe("Agent pause/resume during execution", () => {
     const handlers = createPausingHandlers(() => agent);
     agent = new Agent({
       id: "no-complete-on-pause",
-      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      config: createAgentConfig({
+        name: "test",
+        maxSteps: 3,
+        eventsBasePath: tempDir,
+      }),
       handlers,
     });
 
@@ -217,7 +257,11 @@ describe("Agent pause/resume during execution", () => {
     const handlers = createPausingHandlers(() => agent);
     agent = new Agent({
       id: "resume-test",
-      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      config: createAgentConfig({
+        name: "test",
+        maxSteps: 3,
+        eventsBasePath: tempDir,
+      }),
       handlers,
     });
 
@@ -232,7 +276,7 @@ describe("Agent pause/resume during execution", () => {
   });
 
   it("resume() throws when agent is not paused", async () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     await expect(agent.resume()).rejects.toThrow(
       "Cannot resume from state: idle",
     );
@@ -280,7 +324,11 @@ describe("Agent abort", () => {
     const handlers = createAbortingHandlers(() => agent);
     agent = new Agent({
       id: "abort-test",
-      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      config: createAgentConfig({
+        name: "test",
+        maxSteps: 3,
+        eventsBasePath: tempDir,
+      }),
       handlers,
     });
 
@@ -321,7 +369,11 @@ describe("Agent abort", () => {
     };
     agent = new Agent({
       id: "abort-from-paused",
-      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      config: createAgentConfig({
+        name: "test",
+        maxSteps: 3,
+        eventsBasePath: tempDir,
+      }),
       handlers: pausingHandlers,
     });
 
@@ -344,7 +396,7 @@ describe("Agent abort", () => {
 
 describe("Agent reset", () => {
   it("reset() transitions from completed to idle", async () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     await agent.run({ prompt: "first" });
     expect(agent.state).toBe("completed");
 
@@ -353,7 +405,7 @@ describe("Agent reset", () => {
   });
 
   it("reset() allows re-running the agent", async () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     await agent.run({ prompt: "first" });
     expect(agent.state).toBe("completed");
 
@@ -392,6 +444,7 @@ describe("Agent reset", () => {
       name: "test",
       maxRetries: 0,
       handlers: failingHandlers,
+      eventsBasePath: tempDir,
     });
 
     await expect(agent.run({ prompt: "test" })).rejects.toThrow(
@@ -430,7 +483,11 @@ describe("Agent reset", () => {
     };
     agent = new Agent({
       id: "reset-aborted",
-      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      config: createAgentConfig({
+        name: "test",
+        maxSteps: 3,
+        eventsBasePath: tempDir,
+      }),
       handlers: abortingHandlers,
     });
 
@@ -444,7 +501,7 @@ describe("Agent reset", () => {
   });
 
   it("reset() throws when agent is not in terminal state", () => {
-    const agent = Agent.create({ name: "test" });
+    const agent = Agent.create({ name: "test", eventsBasePath: tempDir });
     expect(() => agent.reset()).toThrow("Cannot reset from state: idle");
   });
 });

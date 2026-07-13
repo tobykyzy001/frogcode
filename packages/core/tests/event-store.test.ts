@@ -3,7 +3,6 @@ import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StepRecord } from "../src/types/step-record.js";
-import { InMemoryEventStore } from "../src/event-store/in-memory.js";
 import { FileEventStore } from "../src/event-store/file.js";
 
 function makeRecord(overrides: Partial<StepRecord> = {}): StepRecord {
@@ -19,110 +18,6 @@ function makeRecord(overrides: Partial<StepRecord> = {}): StepRecord {
     ...overrides,
   };
 }
-
-describe("InMemoryEventStore", () => {
-  it("should append and retrieve a record", async () => {
-    const store = new InMemoryEventStore();
-    const record = makeRecord();
-    await store.append(record);
-    const all = await store.getAll("agent-a");
-    expect(all).toHaveLength(1);
-    expect(all[0]).toEqual(record);
-  });
-
-  it("should return empty array for non-existent agentId", async () => {
-    const store = new InMemoryEventStore();
-    const all = await store.getAll("nonexistent");
-    expect(all).toEqual([]);
-  });
-
-  it("should replay records in order via async iteration", async () => {
-    const store = new InMemoryEventStore();
-    const r1 = makeRecord({ id: "s1", timestamp: 1000 });
-    const r2 = makeRecord({ id: "s2", timestamp: 2000 });
-    const r3 = makeRecord({ id: "s3", timestamp: 3000 });
-    await store.append(r1);
-    await store.append(r2);
-    await store.append(r3);
-
-    const collected: StepRecord[] = [];
-    for await (const record of store.replay("agent-a")) {
-      collected.push(record);
-    }
-    expect(collected).toEqual([r1, r2, r3]);
-  });
-
-  it("should clear all records for an agentId", async () => {
-    const store = new InMemoryEventStore();
-    await store.append(makeRecord({ agentId: "agent-x" }));
-    await store.append(makeRecord({ agentId: "agent-x", id: "s2" }));
-    await store.clear("agent-x");
-    const all = await store.getAll("agent-x");
-    expect(all).toEqual([]);
-  });
-
-  it("should store multiple records for the same agentId", async () => {
-    const store = new InMemoryEventStore();
-    const r1 = makeRecord({ id: "s1" });
-    const r2 = makeRecord({ id: "s2" });
-    await store.append(r1);
-    await store.append(r2);
-    const all = await store.getAll("agent-a");
-    expect(all).toHaveLength(2);
-    expect(all[0]).toEqual(r1);
-    expect(all[1]).toEqual(r2);
-  });
-
-  it("should isolate records by agentId", async () => {
-    const store = new InMemoryEventStore();
-    await store.append(makeRecord({ agentId: "a1", id: "s1" }));
-    await store.append(makeRecord({ agentId: "a2", id: "s2" }));
-    const a1 = await store.getAll("a1");
-    const a2 = await store.getAll("a2");
-    expect(a1).toHaveLength(1);
-    expect(a2).toHaveLength(1);
-    expect(a1[0].agentId).toBe("a1");
-    expect(a2[0].agentId).toBe("a2");
-  });
-
-  it("getAll() returns copies - mutating result does not affect store", async () => {
-    const store = new InMemoryEventStore();
-    await store.append(makeRecord({ id: "s1", type: "perceive" }));
-    const all = await store.getAll("agent-a");
-    all[0].type = "reason";
-    all[0].metadata = { hacked: true };
-
-    const fresh = await store.getAll("agent-a");
-    expect(fresh[0].type).toBe("perceive");
-    expect(fresh[0].metadata).toEqual({});
-  });
-
-  it("replay() yields copies - mutating yielded records does not affect store", async () => {
-    const store = new InMemoryEventStore();
-    await store.append(makeRecord({ id: "s1" }));
-
-    for await (const record of store.replay("agent-a")) {
-      record.id = "hacked";
-      record.metadata = { evil: true };
-    }
-
-    const fresh = await store.getAll("agent-a");
-    expect(fresh[0].id).toBe("s1");
-    expect(fresh[0].metadata).toEqual({});
-  });
-
-  it("append() stores a copy - mutating original does not affect store", async () => {
-    const store = new InMemoryEventStore();
-    const record = makeRecord({ id: "s1" });
-    await store.append(record);
-    record.id = "mutated";
-    record.metadata = { changed: true };
-
-    const fresh = await store.getAll("agent-a");
-    expect(fresh[0].id).toBe("s1");
-    expect(fresh[0].metadata).toEqual({});
-  });
-});
 
 describe("FileEventStore", () => {
   let tempDir: string;

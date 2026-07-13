@@ -1,11 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   AgentAbortedError,
   ExecutionLoop,
   StepTimeoutError,
 } from "../src/execution-loop.js";
 import { createMockHandlers } from "../src/handlers/mock.js";
-import { InMemoryEventStore } from "../src/event-store/in-memory.js";
+import { FileEventStore } from "../src/event-store/file.js";
 import { ExecutionContext } from "../src/execution-context.js";
 import { AgentStateMachine } from "../src/state-machine.js";
 import { createAgentConfig } from "../src/types/config.js";
@@ -19,6 +22,19 @@ function delay(ms: number): Promise<void> {
 describe("ExecutionLoop", () => {
   const config = createAgentConfig({ name: "test", maxSteps: 1 });
   const handlers = createMockHandlers();
+
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "frogcode-test-"));
+  });
+
+  afterEach(async () => {
+    if (tempDir) {
+      await rm(tempDir, { recursive: true, force: true });
+      tempDir = "" as string;
+    }
+  });
 
   function makeStateMachine() {
     const sm = new AgentStateMachine();
@@ -37,7 +53,7 @@ describe("ExecutionLoop", () => {
   it("runs one full PRAO cycle producing 4 steps", async () => {
     const loop = new ExecutionLoop(
       handlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config,
       makeStateMachine(),
     );
@@ -52,7 +68,7 @@ describe("ExecutionLoop", () => {
   });
 
   it("appends steps to EventStore", async () => {
-    const store = new InMemoryEventStore();
+    const store = new FileEventStore(tempDir);
     const loop = new ExecutionLoop(
       handlers,
       store,
@@ -75,7 +91,7 @@ describe("ExecutionLoop", () => {
 
   it("done signal stops loop before maxSteps", async () => {
     const twoStepConfig = createAgentConfig({ name: "test", maxSteps: 5 });
-    const store = new InMemoryEventStore();
+    const store = new FileEventStore(tempDir);
     const loop = new ExecutionLoop(
       handlers,
       store,
@@ -116,7 +132,7 @@ describe("ExecutionLoop", () => {
       },
     };
     const twoStepConfig = createAgentConfig({ name: "test", maxSteps: 2 });
-    const store = new InMemoryEventStore();
+    const store = new FileEventStore(tempDir);
     const loop = new ExecutionLoop(
       noDoneHandlers,
       store,
@@ -134,7 +150,7 @@ describe("ExecutionLoop", () => {
   it("returns AgentOutput with steps containing observe content", async () => {
     const loop = new ExecutionLoop(
       handlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config,
       makeStateMachine(),
     );
@@ -179,7 +195,7 @@ describe("ExecutionLoop", () => {
     };
     const loop = new ExecutionLoop(
       slowHandlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config,
       makeStateMachine(),
     );
@@ -218,7 +234,7 @@ describe("ExecutionLoop", () => {
       maxSteps: 1,
       maxRetries: 0,
     });
-    const store = new InMemoryEventStore();
+    const store = new FileEventStore(tempDir);
     const agentId = "fail-test";
     const loop = new ExecutionLoop(
       failingHandlers,
@@ -271,7 +287,7 @@ describe("ExecutionLoop", () => {
     });
     const loop = new ExecutionLoop(
       flakyHandlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       retryConfig,
       makeStateMachine(),
     );
@@ -310,7 +326,7 @@ describe("ExecutionLoop", () => {
       maxSteps: 1,
       maxRetries: 2,
     });
-    const store = new InMemoryEventStore();
+    const store = new FileEventStore(tempDir);
     const loop = new ExecutionLoop(
       alwaysFailHandlers,
       store,
@@ -356,7 +372,7 @@ describe("ExecutionLoop", () => {
       pauseOnFailure: true,
     });
     const sm = makeStateMachine();
-    const store = new InMemoryEventStore();
+    const store = new FileEventStore(tempDir);
     const loop = new ExecutionLoop(
       failingHandlers,
       store,
@@ -407,7 +423,7 @@ describe("ExecutionLoop", () => {
     });
     const loop = new ExecutionLoop(
       slowHandlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       timeoutConfig,
       makeStateMachine(),
     );
@@ -443,7 +459,7 @@ describe("ExecutionLoop", () => {
     };
     const loop = new ExecutionLoop(
       pausingHandlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config,
       sm,
     );
@@ -485,7 +501,7 @@ describe("ExecutionLoop", () => {
       },
     };
     const config3 = createAgentConfig({ name: "test", maxSteps: 3 });
-    const store = new InMemoryEventStore();
+    const store = new FileEventStore(tempDir);
     const loop = new ExecutionLoop(
       abortingHandlers,
       store,
@@ -534,7 +550,7 @@ describe("ExecutionLoop", () => {
     const config3 = createAgentConfig({ name: "test", maxSteps: 3 });
     const loop = new ExecutionLoop(
       pausingHandlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config3,
       sm,
     );
@@ -554,7 +570,7 @@ describe("ExecutionLoop", () => {
   it("resume() throws when no previous execution exists", async () => {
     const loop = new ExecutionLoop(
       handlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config,
       makeStateMachine(),
     );
@@ -591,7 +607,7 @@ describe("ExecutionLoop", () => {
     };
     const loop = new ExecutionLoop(
       customObserveHandlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config,
       makeStateMachine(),
     );
@@ -610,7 +626,7 @@ describe("ExecutionLoop", () => {
   it("generates unique step IDs using UUID", async () => {
     const loop = new ExecutionLoop(
       handlers,
-      new InMemoryEventStore(),
+      new FileEventStore(tempDir),
       config,
       makeStateMachine(),
     );

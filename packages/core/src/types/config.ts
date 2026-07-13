@@ -6,6 +6,11 @@ export interface AgentConfig {
   pauseOnFailure: boolean;
   metadata: Record<string, unknown>;
   eventsBasePath: string;
+  /**
+   * Optional override for retryable-error classification.
+   * When omitted, the built-in `isRetryableError` is used.
+   */
+  retryableErrorClassifier?: (error: unknown, attempt: number) => boolean;
 }
 
 export const DEFAULT_AGENT_CONFIG: Omit<AgentConfig, "name"> = {
@@ -28,5 +33,6 @@ export function createAgentConfig(
     pauseOnFailure: opts.pauseOnFailure ?? DEFAULT_AGENT_CONFIG.pauseOnFailure,
     metadata: opts.metadata ?? { ...DEFAULT_AGENT_CONFIG.metadata },
     eventsBasePath: opts.eventsBasePath ?? DEFAULT_AGENT_CONFIG.eventsBasePath,
+    retryableErrorClassifier: opts.retryableErrorClassifier,
   };
 }

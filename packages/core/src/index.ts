@@ -1,6 +1,5 @@
 export * from "./types/index.js";
 export type { EventStore } from "./event-store/types.js";
-export { InMemoryEventStore } from "./event-store/in-memory.js";
 export { FileEventStore } from "./event-store/file.js";
 export { ExecutionContext } from "./execution-context.js";
 export {

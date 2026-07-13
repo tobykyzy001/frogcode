@@ -5,6 +5,7 @@ export interface AgentConfig {
   maxRetries: number;
   pauseOnFailure: boolean;
   metadata: Record<string, unknown>;
+  eventsBasePath: string;
 }
 
 export const DEFAULT_AGENT_CONFIG: Omit<AgentConfig, "name"> = {
@@ -13,6 +14,7 @@ export const DEFAULT_AGENT_CONFIG: Omit<AgentConfig, "name"> = {
   maxRetries: 3,
   pauseOnFailure: false,
   metadata: {},
+  eventsBasePath: "./.frogcode/events/",
 };
 
 export function createAgentConfig(
@@ -25,5 +27,6 @@ export function createAgentConfig(
     maxRetries: opts.maxRetries ?? DEFAULT_AGENT_CONFIG.maxRetries,
     pauseOnFailure: opts.pauseOnFailure ?? DEFAULT_AGENT_CONFIG.pauseOnFailure,
     metadata: opts.metadata ?? { ...DEFAULT_AGENT_CONFIG.metadata },
+    eventsBasePath: opts.eventsBasePath ?? DEFAULT_AGENT_CONFIG.eventsBasePath,
   };
 }

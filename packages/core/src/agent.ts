@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { InMemoryEventStore } from "./event-store/in-memory.js";
+import { FileEventStore } from "./event-store/file.js";
 import type { EventStore } from "./event-store/types.js";
 import { ExecutionContext } from "./execution-context.js";
 import { AgentAbortedError, ExecutionLoop } from "./execution-loop.js";
@@ -22,12 +22,11 @@ export class Agent {
     id: string;
     config: AgentConfig;
     handlers?: PRAOHandlers;
-    eventStore?: EventStore;
   }) {
     this.id = opts.id;
     this.config = opts.config;
     this.#stateMachine = new AgentStateMachine();
-    this.#eventStore = opts.eventStore ?? new InMemoryEventStore();
+    this.#eventStore = new FileEventStore(this.config.eventsBasePath);
     this.#loop = new ExecutionLoop(
       opts.handlers ?? createMockHandlers(),
       this.#eventStore,
@@ -117,7 +116,6 @@ export class Agent {
     opts: Partial<AgentConfig> & {
       id?: string;
       handlers?: PRAOHandlers;
-      eventStore?: EventStore;
     },
   ): Agent {
     const id = opts.id ?? `agent-${randomUUID()}`;
@@ -129,7 +127,6 @@ export class Agent {
       id,
       config,
       handlers: opts.handlers,
-      eventStore: opts.eventStore,
     });
   }
 }

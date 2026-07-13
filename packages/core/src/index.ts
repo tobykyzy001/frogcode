@@ -7,13 +7,20 @@ export {
   AgentStateMachine,
   InvalidStateTransitionError,
 } from "./state-machine.js";
-export { ExecutionLoop } from "./execution-loop.js";
+export {
+  ExecutionLoop,
+  StepTimeoutError,
+  AgentAbortedError,
+  NoExecutionToResumeError,
+} from "./execution-loop.js";
 export { Agent } from "./agent.js";
 export type {
   PerceiveHandler,
   ReasonHandler,
+  ReasonResult,
   ActHandler,
   ObserveHandler,
+  ObserveResult,
   PRAOHandlers,
 } from "./handlers/types.js";
 export { createMockHandlers } from "./handlers/mock.js";

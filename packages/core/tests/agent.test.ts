@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Agent } from "../src/agent.js";
+import { AgentAbortedError } from "../src/execution-loop.js";
 import { InvalidStateTransitionError } from "../src/state-machine.js";
 import { InMemoryEventStore } from "../src/event-store/in-memory.js";
+import { createMockHandlers } from "../src/handlers/mock.js";
+import { createAgentConfig } from "../src/types/config.js";
+import type { AgentInput } from "../src/types/agent.js";
+import type { PRAOHandlers } from "../src/handlers/types.js";
 
 describe("Agent", () => {
   it("starts in idle state", () => {
@@ -14,14 +19,16 @@ describe("Agent", () => {
     expect(agent.state).toBe("idle");
     const result = await agent.run({ prompt: "hello" });
     expect(agent.state).toBe("completed");
-    expect(result).toHaveProperty("content");
     expect(result).toHaveProperty("steps");
   });
 
-  it("returns AgentOutput with content and steps", async () => {
+  it("returns AgentOutput with steps containing observe result", async () => {
     const agent = Agent.create({ name: "test" });
     const result = await agent.run({ prompt: "hello world" });
-    expect(result.content).toBe("hello world");
+    const observeStep = result.steps.find((s) => s.type === "observe");
+    expect(observeStep).toBeDefined();
+    const observeResult = observeStep?.output as { content: string };
+    expect(observeResult.content).toBe("hello world");
     expect(result.steps.length).toBeGreaterThan(0);
   });
 
@@ -55,21 +62,389 @@ describe("Agent", () => {
     expect(agent.state).toBe("idle");
   });
 
-  it("respects maxSteps to limit execution", async () => {
-    const agent = Agent.create({ name: "test", maxSteps: 2 });
+  it("done signal overrides maxSteps", async () => {
+    const agent = Agent.create({ name: "test", maxSteps: 10 });
     const result = await agent.run({ prompt: "test" });
-    expect(result.steps).toHaveLength(8); // 2 cycles * 4 steps
+    expect(result.steps).toHaveLength(4);
+  });
+
+  it("runs until maxSteps when done is never signaled", async () => {
+    const noDoneHandlers: PRAOHandlers = {
+      perceive: {
+        async perceive(input: AgentInput) {
+          return { rawInput: input.prompt };
+        },
+      },
+      reason: {
+        async reason(p: unknown) {
+          return {
+            action: { target: (p as { rawInput: string }).rawInput },
+          };
+        },
+      },
+      act: {
+        async act(d: unknown) {
+          return { result: (d as { target: string }).target };
+        },
+      },
+      observe: {
+        async observe(_a: unknown, r: unknown) {
+          return { content: (r as { result: string }).result };
+        },
+      },
+    };
+    const agent = Agent.create({
+      name: "test",
+      maxSteps: 2,
+      handlers: noDoneHandlers,
+    });
+    const result = await agent.run({ prompt: "test" });
+    expect(result.steps).toHaveLength(8);
   });
 
   it("records steps in shared EventStore", async () => {
     const eventStore = new InMemoryEventStore();
     const agent = new Agent({
       id: "event-test",
-      config: { name: "test", maxSteps: 1, stepTimeoutMs: 30000, maxRetries: 3, pauseOnFailure: false, metadata: {} },
+      config: createAgentConfig({ name: "test", maxSteps: 1 }),
       eventStore,
     });
     await agent.run({ prompt: "test" });
     const records = await eventStore.getAll("event-test");
     expect(records).toHaveLength(4);
+  });
+
+  it("Agent.create() accepts handlers and eventStore", async () => {
+    const eventStore = new InMemoryEventStore();
+    const handlers = createMockHandlers();
+    const agent = Agent.create({
+      name: "test",
+      handlers,
+      eventStore,
+    });
+    await agent.run({ prompt: "test" });
+    const records = await eventStore.getAll(agent.id);
+    expect(records.length).toBeGreaterThan(0);
+  });
+
+  it("generates unique agent IDs using UUID", () => {
+    const agent1 = Agent.create({ name: "test1" });
+    const agent2 = Agent.create({ name: "test2" });
+    expect(agent1.id).not.toBe(agent2.id);
+    expect(agent1.id).toMatch(/^agent-[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  it("run() throws when agent is not idle", async () => {
+    const agent = Agent.create({ name: "test" });
+    await agent.run({ prompt: "first" });
+    expect(agent.state).toBe("completed");
+    await expect(agent.run({ prompt: "again" })).rejects.toThrow(
+      "Cannot run from state: completed",
+    );
+  });
+});
+
+describe("Agent pause/resume during execution", () => {
+  function createPausingHandlers(
+    getAgent: () => Agent,
+    pauseOnCall = 2,
+  ): PRAOHandlers {
+    let perceiveCalls = 0;
+    return {
+      perceive: {
+        async perceive(input: AgentInput) {
+          perceiveCalls++;
+          if (perceiveCalls === pauseOnCall && getAgent().state === "running") {
+            getAgent().pause();
+          }
+          return { rawInput: input.prompt };
+        },
+      },
+      reason: {
+        async reason(perception: unknown) {
+          return {
+            action: { target: (perception as { rawInput: string }).rawInput },
+          };
+        },
+      },
+      act: {
+        async act(decision: unknown) {
+          return { result: (decision as { target: string }).target };
+        },
+      },
+      observe: {
+        async observe(_action: unknown, result: unknown) {
+          return { content: (result as { result: string }).result };
+        },
+      },
+    };
+  }
+
+  it("pause() during execution stops immediately after current step", async () => {
+    let agent: Agent;
+    const handlers = createPausingHandlers(() => agent);
+    agent = new Agent({
+      id: "pause-during-run",
+      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      handlers,
+    });
+
+    const result = await agent.run({ prompt: "hello" });
+
+    expect(agent.state).toBe("paused");
+    // Cycle 1: 4 steps (perceive, reason, act, observe)
+    // Cycle 2: 1 step (perceive triggers pause, loop breaks before reason)
+    expect(result.steps).toHaveLength(5);
+  });
+
+  it("run() does not transition to completed when paused mid-execution", async () => {
+    let agent: Agent;
+    const handlers = createPausingHandlers(() => agent);
+    agent = new Agent({
+      id: "no-complete-on-pause",
+      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      handlers,
+    });
+
+    await agent.run({ prompt: "test" });
+
+    expect(agent.state).toBe("paused");
+    expect(agent.state).not.toBe("completed");
+  });
+
+  it("resume() continues execution and completes", async () => {
+    let agent: Agent;
+    const handlers = createPausingHandlers(() => agent);
+    agent = new Agent({
+      id: "resume-test",
+      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      handlers,
+    });
+
+    const result1 = await agent.run({ prompt: "test" });
+    expect(agent.state).toBe("paused");
+    expect(result1.steps).toHaveLength(5);
+
+    const result2 = await agent.resume();
+    expect(agent.state).toBe("completed");
+    // 5 from run + 3 (reason, act, observe for cycle 1) + 4 (full cycle 2) = 12
+    expect(result2.steps).toHaveLength(12);
+  });
+
+  it("resume() throws when agent is not paused", async () => {
+    const agent = Agent.create({ name: "test" });
+    await expect(agent.resume()).rejects.toThrow(
+      "Cannot resume from state: idle",
+    );
+  });
+});
+
+describe("Agent abort", () => {
+  function createAbortingHandlers(
+    getAgent: () => Agent,
+    abortOnCall = 2,
+  ): PRAOHandlers {
+    let perceiveCalls = 0;
+    return {
+      perceive: {
+        async perceive(input: AgentInput) {
+          perceiveCalls++;
+          if (perceiveCalls === abortOnCall) {
+            getAgent().abort();
+          }
+          return { rawInput: input.prompt };
+        },
+      },
+      reason: {
+        async reason(p: unknown) {
+          return {
+            action: { target: (p as { rawInput: string }).rawInput },
+          };
+        },
+      },
+      act: {
+        async act(d: unknown) {
+          return { result: (d as { target: string }).target };
+        },
+      },
+      observe: {
+        async observe(_a: unknown, r: unknown) {
+          return { content: (r as { result: string }).result };
+        },
+      },
+    };
+  }
+
+  it("abort() during execution causes AgentAbortedError", async () => {
+    let agent: Agent;
+    const handlers = createAbortingHandlers(() => agent);
+    agent = new Agent({
+      id: "abort-test",
+      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      handlers,
+    });
+
+    await expect(agent.run({ prompt: "test" })).rejects.toThrow(
+      AgentAbortedError,
+    );
+    expect(agent.state).toBe("aborted");
+  });
+
+  it("abort() from paused state transitions to aborted", async () => {
+    let agent: Agent;
+    let perceiveCalls = 0;
+    const pausingHandlers: PRAOHandlers = {
+      perceive: {
+        async perceive(input: AgentInput) {
+          perceiveCalls++;
+          if (perceiveCalls === 2) agent.pause();
+          return { rawInput: input.prompt };
+        },
+      },
+      reason: {
+        async reason(p: unknown) {
+          return {
+            action: { target: (p as { rawInput: string }).rawInput },
+          };
+        },
+      },
+      act: {
+        async act(d: unknown) {
+          return { result: (d as { target: string }).target };
+        },
+      },
+      observe: {
+        async observe(_a: unknown, r: unknown) {
+          return { content: (r as { result: string }).result };
+        },
+      },
+    };
+    agent = new Agent({
+      id: "abort-from-paused",
+      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      handlers: pausingHandlers,
+    });
+
+    await agent.run({ prompt: "test" });
+    expect(agent.state).toBe("paused");
+
+    agent.abort();
+    expect(agent.state).toBe("aborted");
+
+    // resume() should throw since state is aborted, not paused
+    await expect(agent.resume()).rejects.toThrow(
+      "Cannot resume from state: aborted",
+    );
+
+    // reset should work from aborted
+    agent.reset();
+    expect(agent.state).toBe("idle");
+  });
+});
+
+describe("Agent reset", () => {
+  it("reset() transitions from completed to idle", async () => {
+    const agent = Agent.create({ name: "test" });
+    await agent.run({ prompt: "first" });
+    expect(agent.state).toBe("completed");
+
+    agent.reset();
+    expect(agent.state).toBe("idle");
+  });
+
+  it("reset() allows re-running the agent", async () => {
+    const agent = Agent.create({ name: "test" });
+    await agent.run({ prompt: "first" });
+    expect(agent.state).toBe("completed");
+
+    agent.reset();
+    expect(agent.state).toBe("idle");
+
+    const result = await agent.run({ prompt: "second" });
+    expect(agent.state).toBe("completed");
+    expect(result.steps.length).toBeGreaterThan(0);
+  });
+
+  it("reset() transitions from failed to idle", async () => {
+    const failingHandlers: PRAOHandlers = {
+      perceive: {
+        async perceive() {
+          throw new Error("perceive failed");
+        },
+      },
+      reason: {
+        async reason() {
+          return { action: "test" };
+        },
+      },
+      act: {
+        async act() {
+          return { result: "done" };
+        },
+      },
+      observe: {
+        async observe() {
+          return { content: "observed" };
+        },
+      },
+    };
+    const agent = Agent.create({
+      name: "test",
+      maxRetries: 0,
+      handlers: failingHandlers,
+    });
+
+    await expect(agent.run({ prompt: "test" })).rejects.toThrow(
+      "perceive failed",
+    );
+    expect(agent.state).toBe("failed");
+
+    agent.reset();
+    expect(agent.state).toBe("idle");
+  });
+
+  it("reset() transitions from aborted to idle", async () => {
+    let agent: Agent;
+    const abortingHandlers: PRAOHandlers = {
+      perceive: {
+        async perceive(input: AgentInput) {
+          agent.abort();
+          return { rawInput: input.prompt };
+        },
+      },
+      reason: {
+        async reason() {
+          return { action: "test", done: true };
+        },
+      },
+      act: {
+        async act() {
+          return { result: "done" };
+        },
+      },
+      observe: {
+        async observe() {
+          return { content: "observed" };
+        },
+      },
+    };
+    agent = new Agent({
+      id: "reset-aborted",
+      config: createAgentConfig({ name: "test", maxSteps: 3 }),
+      handlers: abortingHandlers,
+    });
+
+    await expect(agent.run({ prompt: "test" })).rejects.toThrow(
+      AgentAbortedError,
+    );
+    expect(agent.state).toBe("aborted");
+
+    agent.reset();
+    expect(agent.state).toBe("idle");
+  });
+
+  it("reset() throws when agent is not in terminal state", () => {
+    const agent = Agent.create({ name: "test" });
+    expect(() => agent.reset()).toThrow("Cannot reset from state: idle");
   });
 });

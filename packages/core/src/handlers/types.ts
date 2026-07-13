@@ -5,12 +5,22 @@ export interface PerceiveHandler {
   perceive(input: AgentInput, ctx: ExecutionContext): Promise<unknown>;
 }
 
+export interface ReasonResult {
+  action: unknown;
+  done?: boolean;
+}
+
 export interface ReasonHandler {
-  reason(perception: unknown, ctx: ExecutionContext): Promise<unknown>;
+  reason(perception: unknown, ctx: ExecutionContext): Promise<ReasonResult>;
 }
 
 export interface ActHandler {
   act(decision: unknown, ctx: ExecutionContext): Promise<unknown>;
+}
+
+export interface ObserveResult {
+  content: string;
+  data?: unknown;
 }
 
 export interface ObserveHandler {
@@ -18,7 +28,7 @@ export interface ObserveHandler {
     action: unknown,
     result: unknown,
     ctx: ExecutionContext,
-  ): Promise<unknown>;
+  ): Promise<ObserveResult>;
 }
 
 export interface PRAOHandlers {

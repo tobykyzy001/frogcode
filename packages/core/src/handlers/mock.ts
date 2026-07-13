@@ -1,6 +1,6 @@
 import type { ExecutionContext } from "../execution-context.js";
 import type { AgentInput } from "../types/agent.js";
-import type { PRAOHandlers } from "./types.js";
+import type { ObserveResult, PRAOHandlers, ReasonResult } from "./types.js";
 
 class MockPerceiveHandler {
   async perceive(input: AgentInput, _ctx: ExecutionContext): Promise<unknown> {
@@ -9,9 +9,15 @@ class MockPerceiveHandler {
 }
 
 class MockReasonHandler {
-  async reason(perception: unknown, _ctx: ExecutionContext): Promise<unknown> {
+  async reason(
+    perception: unknown,
+    _ctx: ExecutionContext,
+  ): Promise<ReasonResult> {
     const p = perception as { rawInput: string };
-    return { action: "echo", target: p.rawInput };
+    return {
+      action: { action: "echo", target: p.rawInput },
+      done: true,
+    };
   }
 }
 
@@ -27,9 +33,12 @@ class MockObserveHandler {
     _action: unknown,
     result: unknown,
     _ctx: ExecutionContext,
-  ): Promise<unknown> {
+  ): Promise<ObserveResult> {
     const r = result as { result: string };
-    return { observation: r.result, timestamp: Date.now() };
+    return {
+      content: r.result,
+      data: { timestamp: Date.now() },
+    };
   }
 }
 

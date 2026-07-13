@@ -12,10 +12,11 @@ export class InvalidStateTransitionError extends Error {
 
 const VALID_TRANSITIONS: Record<AgentState, AgentState[]> = {
   idle: ["running"],
-  running: ["paused", "completed", "failed"],
-  paused: ["running", "failed", "completed"],
-  completed: [],
-  failed: [],
+  running: ["paused", "completed", "failed", "aborted"],
+  paused: ["running", "failed", "aborted", "completed"],
+  completed: ["idle"],
+  failed: ["idle"],
+  aborted: ["idle"],
 };
 
 export class AgentStateMachine {

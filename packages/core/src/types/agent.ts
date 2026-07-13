@@ -1,6 +1,12 @@
 import type { StepRecord } from "./step-record.js";
 
-export type AgentState = "idle" | "running" | "paused" | "completed" | "failed";
+export type AgentState =
+  | "idle"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "aborted";
 
 export interface AgentInput {
   prompt: string;
@@ -8,7 +14,5 @@ export interface AgentInput {
 }
 
 export interface AgentOutput {
-  content: string;
   steps: StepRecord[];
-  metadata: Record<string, unknown>;
 }

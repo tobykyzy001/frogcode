@@ -3,28 +3,24 @@ import type {
   AgentInput,
   AgentOutput,
   AgentState,
-  Event,
-  EventType,
   Message,
-  Step,
+  MessageRole,
+  ObserveResult,
+  ReasonResult,
   StepRecord,
-  StepStatus,
   StepType,
 } from "../src/types/index.js";
 
 const ALL_ROLES = ["system", "user", "assistant", "tool"] as const;
 const ALL_STEP_TYPES = ["perceive", "reason", "act", "observe"] as const;
-const ALL_AGENT_STATES = ["idle", "running", "paused", "completed", "failed"] as const;
-const ALL_EVENT_TYPES = [
-  "step_started",
-  "step_completed",
-  "step_failed",
-  "state_changed",
-  "agent_started",
-  "agent_completed",
-  "agent_failed",
+const ALL_AGENT_STATES = [
+  "idle",
+  "running",
+  "paused",
+  "completed",
+  "failed",
+  "aborted",
 ] as const;
-const ALL_STEP_STATUSES = ["pending", "running", "completed", "failed"] as const;
 
 describe("Message", () => {
   it("accepts all four roles", () => {
@@ -137,14 +133,15 @@ describe("StepRecord", () => {
 });
 
 describe("AgentState", () => {
-  it("covers all five lifecycle states", () => {
-    expect(ALL_AGENT_STATES.length).toBe(5);
+  it("covers all six lifecycle states", () => {
+    expect(ALL_AGENT_STATES.length).toBe(6);
     const states: AgentState[] = [...ALL_AGENT_STATES];
     expect(states).toContain("idle");
     expect(states).toContain("running");
     expect(states).toContain("paused");
     expect(states).toContain("completed");
     expect(states).toContain("failed");
+    expect(states).toContain("aborted");
   });
 });
 
@@ -189,83 +186,54 @@ describe("AgentOutput", () => {
   });
 });
 
-describe("Event", () => {
-  it("accepts all seven event types", () => {
-    const events: Event[] = ALL_EVENT_TYPES.map((type, i) => ({
-      id: `e-${i}`,
-      type,
-      payload: { i },
-      timestamp: 1700000000000 + i,
-    }));
-    expect(events.map((e) => e.type)).toEqual([...ALL_EVENT_TYPES]);
+describe("ReasonResult", () => {
+  it("requires action field", () => {
+    const r: ReasonResult = { action: "do-something" };
+    expect(r.action).toBe("do-something");
+    expect(r.done).toBeUndefined();
   });
 
-  it("discriminates via the type field", () => {
-    const e: Event = {
-      id: "e1",
-      type: "state_changed",
-      payload: { from: "idle", to: "running" },
-      timestamp: 1,
-    };
-    const tag: EventType = e.type;
-    expect(tag).toBe("state_changed");
+  it("accepts optional done flag", () => {
+    const r: ReasonResult = { action: null, done: true };
+    expect(r.done).toBe(true);
   });
 
-  it("accepts arbitrary payload", () => {
-    const e: Event = {
-      id: "e2",
-      type: "step_failed",
-      payload: { reason: "timeout", retryable: true, detail: { ms: 30000 } },
-      timestamp: 0,
-    };
-    expect(e.payload.retryable).toBe(true);
+  it("allows action to be any unknown value", () => {
+    const r1: ReasonResult = { action: { tool: "search", args: { q: "test" } } };
+    const r2: ReasonResult = { action: 42, done: false };
+    expect(r1.action).toEqual({ tool: "search", args: { q: "test" } });
+    expect(r2.action).toBe(42);
   });
 });
 
-describe("Step", () => {
-  it("accepts all four step types and four statuses", () => {
-    const steps: Step[] = ALL_STEP_TYPES.flatMap((type) =>
-      ALL_STEP_STATUSES.map((status) => ({
-        id: `${type}-${status}`,
-        type,
-        input: null,
-        output: null,
-        status,
-        timestamp: 0,
-      })),
-    );
-    expect(steps).toHaveLength(ALL_STEP_TYPES.length * ALL_STEP_STATUSES.length);
-    expect(steps[0]?.status).toBe<StepStatus>("pending");
+describe("ObserveResult", () => {
+  it("requires content string", () => {
+    const r: ObserveResult = { content: "observation text" };
+    expect(r.content).toBe("observation text");
+    expect(r.data).toBeUndefined();
   });
 
-  it("discriminates via type and status fields", () => {
-    const s: Step = {
-      id: "s1",
-      type: "reason",
-      input: "q",
-      output: "a",
-      status: "running",
-      timestamp: 1,
+  it("accepts optional data field", () => {
+    const r: ObserveResult = {
+      content: "found 3 results",
+      data: { count: 3, items: ["a", "b", "c"] },
     };
-    expect(s.type).toBe("reason");
-    expect(s.status).toBe("running");
+    expect(r.data).toEqual({ count: 3, items: ["a", "b", "c"] });
   });
 });
 
 describe("Barrel re-exports", () => {
-  it("exports Message, StepRecord, AgentState, AgentInput, AgentOutput, Event, StepStatus, Step, EventType, StepType", () => {
+  it("exports Message, StepRecord, AgentState, AgentInput, AgentOutput, StepType, ReasonResult, ObserveResult", () => {
     const typeNames = [
       "Message",
       "StepRecord",
       "AgentState",
       "AgentInput",
       "AgentOutput",
-      "Event",
-      "Step",
-      "StepStatus",
-      "EventType",
       "StepType",
+      "ReasonResult",
+      "ObserveResult",
     ];
-    expect(typeNames).toHaveLength(10);
+    expect(typeNames).toHaveLength(8);
   });
 });

@@ -1,3 +1,4 @@
+import type { AgentStateMachine } from "./state-machine.js";
 import type { AgentState } from "./types/agent.js";
 import type { AgentConfig } from "./types/config.js";
 import { createAgentConfig } from "./types/config.js";
@@ -5,24 +6,28 @@ import { createAgentConfig } from "./types/config.js";
 export class ExecutionContext {
   readonly agentId: string;
   readonly config: AgentConfig;
-  readonly state: AgentState;
   readonly metadata: Record<string, unknown>;
   readonly createdAt: number;
   readonly parent?: ExecutionContext;
+  readonly #stateMachine: AgentStateMachine;
 
   constructor(opts: {
     agentId: string;
     config: AgentConfig;
-    state: AgentState;
+    stateMachine: AgentStateMachine;
     metadata?: Record<string, unknown>;
     parent?: ExecutionContext;
   }) {
     this.agentId = opts.agentId;
     this.config = opts.config;
-    this.state = opts.state;
+    this.#stateMachine = opts.stateMachine;
     this.metadata = opts.metadata ?? {};
     this.createdAt = Date.now();
     this.parent = opts.parent;
+  }
+
+  get state(): AgentState {
+    return this.#stateMachine.state;
   }
 
   set(key: string, value: unknown): void {
@@ -47,7 +52,7 @@ export class ExecutionContext {
     return new ExecutionContext({
       agentId,
       config: childConfig,
-      state: this.state,
+      stateMachine: this.#stateMachine,
       metadata: { ...this.metadata },
       parent: this,
     });

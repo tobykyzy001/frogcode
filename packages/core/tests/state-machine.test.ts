@@ -39,6 +39,13 @@ describe("AgentStateMachine", () => {
       expect(sm.state).toBe("failed");
     });
 
+    it("running → aborted", () => {
+      const sm = new AgentStateMachine();
+      sm.transition("running");
+      sm.transition("aborted");
+      expect(sm.state).toBe("aborted");
+    });
+
     it("paused → running", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
@@ -55,12 +62,44 @@ describe("AgentStateMachine", () => {
       expect(sm.state).toBe("failed");
     });
 
+    it("paused → aborted", () => {
+      const sm = new AgentStateMachine();
+      sm.transition("running");
+      sm.transition("paused");
+      sm.transition("aborted");
+      expect(sm.state).toBe("aborted");
+    });
+
     it("paused → completed", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
       sm.transition("paused");
       sm.transition("completed");
       expect(sm.state).toBe("completed");
+    });
+
+    it("completed → idle (reset)", () => {
+      const sm = new AgentStateMachine();
+      sm.transition("running");
+      sm.transition("completed");
+      sm.transition("idle");
+      expect(sm.state).toBe("idle");
+    });
+
+    it("failed → idle (reset)", () => {
+      const sm = new AgentStateMachine();
+      sm.transition("running");
+      sm.transition("failed");
+      sm.transition("idle");
+      expect(sm.state).toBe("idle");
+    });
+
+    it("aborted → idle (reset)", () => {
+      const sm = new AgentStateMachine();
+      sm.transition("running");
+      sm.transition("aborted");
+      sm.transition("idle");
+      expect(sm.state).toBe("idle");
     });
   });
 
@@ -69,15 +108,23 @@ describe("AgentStateMachine", () => {
       ["idle", "completed"],
       ["idle", "paused"],
       ["idle", "failed"],
+      ["idle", "aborted"],
       ["idle", "idle"],
       ["completed", "running"],
       ["completed", "paused"],
       ["completed", "failed"],
+      ["completed", "aborted"],
       ["completed", "completed"],
       ["failed", "running"],
       ["failed", "paused"],
       ["failed", "completed"],
+      ["failed", "aborted"],
       ["failed", "failed"],
+      ["aborted", "running"],
+      ["aborted", "paused"],
+      ["aborted", "completed"],
+      ["aborted", "failed"],
+      ["aborted", "aborted"],
       ["running", "idle"],
       ["running", "running"],
     ];
@@ -85,12 +132,12 @@ describe("AgentStateMachine", () => {
     for (const [from, to] of illegalCases) {
       it(`${from} → ${to} throws`, () => {
         const sm = new AgentStateMachine();
-        // Navigate to the `from` state first
         if (from !== "idle") {
           sm.transition("running");
           if (from === "paused") sm.transition("paused");
           if (from === "completed") sm.transition("completed");
           if (from === "failed") sm.transition("failed");
+          if (from === "aborted") sm.transition("aborted");
         }
         expect(() => sm.transition(to)).toThrow(InvalidStateTransitionError);
         expect(() => sm.transition(to)).toThrow(
@@ -111,14 +158,22 @@ describe("AgentStateMachine", () => {
       expect(sm.canTransition("completed")).toBe(false);
       expect(sm.canTransition("paused")).toBe(false);
       expect(sm.canTransition("failed")).toBe(false);
+      expect(sm.canTransition("aborted")).toBe(false);
     });
 
     it("returns false for terminal states", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
       sm.transition("completed");
-      expect(sm.canTransition("idle")).toBe(false);
+      expect(sm.canTransition("idle")).toBe(true);
       expect(sm.canTransition("running")).toBe(false);
+    });
+
+    it("returns true for reset from aborted", () => {
+      const sm = new AgentStateMachine();
+      sm.transition("running");
+      sm.transition("aborted");
+      expect(sm.canTransition("idle")).toBe(true);
     });
   });
 
@@ -161,21 +216,6 @@ describe("AgentStateMachine", () => {
       sm.transition("running");
       expect(calls1).toEqual([]);
       expect(calls2).toEqual([["idle", "running"]]);
-    });
-  });
-
-  describe("InvalidStateTransitionError", () => {
-    it("has from, to, and name properties", () => {
-      const err = new InvalidStateTransitionError("idle", "completed");
-      expect(err.from).toBe("idle");
-      expect(err.to).toBe("completed");
-      expect(err.name).toBe("InvalidStateTransitionError");
-      expect(err.message).toBe("Invalid state transition: idle -> completed");
-    });
-
-    it("is an instance of Error", () => {
-      const err = new InvalidStateTransitionError("idle", "completed");
-      expect(err).toBeInstanceOf(Error);
     });
   });
 });

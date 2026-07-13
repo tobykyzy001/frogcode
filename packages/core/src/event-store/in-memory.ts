@@ -6,18 +6,19 @@ export class InMemoryEventStore implements EventStore {
 
   async append(record: StepRecord): Promise<void> {
     const records = this.#store.get(record.agentId) ?? [];
-    records.push(record);
+    records.push({ ...record });
     this.#store.set(record.agentId, records);
   }
 
   async getAll(agentId: string): Promise<StepRecord[]> {
-    return this.#store.get(agentId) ?? [];
+    const records = this.#store.get(agentId);
+    return records ? records.map((r) => ({ ...r })) : [];
   }
 
   async *replay(agentId: string): AsyncIterable<StepRecord> {
     const records = this.#store.get(agentId) ?? [];
     for (const record of records) {
-      yield record;
+      yield { ...record };
     }
   }
 

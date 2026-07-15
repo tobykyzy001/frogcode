@@ -39,7 +39,7 @@ describe("isRetryableError", () => {
 
     it("returns false for InvalidStateTransitionError", () => {
       const from: AgentState = "idle";
-      const to: AgentState = "completed";
+      const to: AgentState = "finished";
       expect(
         isRetryableError(new InvalidStateTransitionError(from, to), 1),
       ).toBe(false);
@@ -68,31 +68,31 @@ describe("isRetryableError", () => {
     });
   });
 
-  describe("generic Error — retryable by default", () => {
-    it("returns true for generic Error on attempt 1", () => {
-      expect(isRetryableError(new Error("boom"), 1)).toBe(true);
+  describe("generic Error — non-retryable by default (could be credits/permission)", () => {
+    it("returns false for generic Error on attempt 1", () => {
+      expect(isRetryableError(new Error("boom"), 1)).toBe(false);
     });
 
-    it("returns true for generic Error on any attempt", () => {
-      expect(isRetryableError(new Error("boom"), 5)).toBe(true);
+    it("returns false for generic Error on any attempt", () => {
+      expect(isRetryableError(new Error("boom"), 5)).toBe(false);
     });
   });
 
-  describe("non-Error values — treated as retryable", () => {
-    it("returns true for a string", () => {
-      expect(isRetryableError("string error", 1)).toBe(true);
+  describe("non-Error values — non-retryable by default", () => {
+    it("returns false for a string", () => {
+      expect(isRetryableError("string error", 1)).toBe(false);
     });
 
-    it("returns true for undefined", () => {
-      expect(isRetryableError(undefined, 1)).toBe(true);
+    it("returns false for undefined", () => {
+      expect(isRetryableError(undefined, 1)).toBe(false);
     });
 
-    it("returns true for null", () => {
-      expect(isRetryableError(null, 1)).toBe(true);
+    it("returns false for null", () => {
+      expect(isRetryableError(null, 1)).toBe(false);
     });
 
-    it("returns true for a plain object", () => {
-      expect(isRetryableError({ code: 42 }, 1)).toBe(true);
+    it("returns false for a plain object", () => {
+      expect(isRetryableError({ code: 42 }, 1)).toBe(false);
     });
   });
 });

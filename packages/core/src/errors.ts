@@ -12,20 +12,18 @@ const STEP_TIMEOUT_MAX_RETRY_ATTEMPT = 1;
  * Classifies whether an error is retryable based on its type and attempt count.
  *
  * Retryable (transient, non-deterministic):
- *   - Generic Error (default — preserves existing retry behavior)
  *   - StepTimeoutError on first attempt (occasional timeout)
  *
  * Non-retryable (deterministic, retry won't help):
+ *   - Default: unknown errors (could be credits/permission/config issues) — fail fast
  *   - Programming errors: TypeError / ReferenceError / SyntaxError / RangeError
  *   - Control flow: AgentAbortedError / NoExecutionToResumeError
  *   - State machine logic: InvalidStateTransitionError
  *   - Persistent StepTimeoutError (attempt >= 2)
  *
- * Implementation note: classes are referenced directly via `instanceof` inside
- * the function body rather than via a pre-built array. This is required because
- * `errors.ts` and `execution-loop.ts` form a circular ESM dependency — class
- * bindings are live references that are only fully resolved at call time, not
- * at module-evaluation time when a top-level array would be populated.
+ * Only explicitly known transient errors are retryable. Unknown errors
+ * (which could be "insufficient credits", "no permission", etc.) are
+ * non-retryable by default — caller should see them immediately.
  */
 export function isRetryableError(error: unknown, attempt: number): boolean {
   // StepTimeoutError: retryable only on first attempt
@@ -49,6 +47,6 @@ export function isRetryableError(error: unknown, attempt: number): boolean {
   ) {
     return false;
   }
-  // Default: generic errors are retryable
-  return true;
+  // Default: unknown errors are non-retryable (could be credits/permission/config)
+  return false;
 }

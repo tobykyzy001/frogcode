@@ -42,7 +42,7 @@ export class Agent {
   async run(input: AgentInput): Promise<AgentOutput> {
     if (this.#stateMachine.state !== "idle") {
       throw new Error(
-        `Cannot run from state: ${this.#stateMachine.state}. Use resume() if paused, or reset() if terminated.`,
+        `Cannot run from state: ${this.#stateMachine.state}. Use reset() if terminated.`,
       );
     }
 
@@ -63,26 +63,9 @@ export class Agent {
     }
   }
 
-  async resume(): Promise<AgentOutput> {
-    if (this.#stateMachine.state !== "paused") {
-      throw new Error(`Cannot resume from state: ${this.#stateMachine.state}`);
-    }
-
-    this.#stateMachine.transition("running");
-
-    try {
-      const result = await this.#loop.resume();
-      this.#finalizeAfterLoop();
-      return result;
-    } catch (error) {
-      this.#finalizeAfterFailure();
-      throw error;
-    }
-  }
-
   #finalizeAfterLoop(): void {
     if (this.#stateMachine.state === "running") {
-      this.#stateMachine.transition("completed");
+      this.#stateMachine.transition("finished");
     }
   }
 
@@ -93,17 +76,13 @@ export class Agent {
     }
   }
 
-  pause(): void {
-    this.#stateMachine.transition("paused");
-  }
-
   abort(): void {
     this.#stateMachine.transition("aborted");
   }
 
   reset(): void {
     const state = this.#stateMachine.state;
-    if (state !== "completed" && state !== "failed" && state !== "aborted") {
+    if (state !== "finished" && state !== "failed" && state !== "aborted") {
       throw new Error(
         `Cannot reset from state: ${state}. Agent must be in a terminal state.`,
       );

@@ -3,8 +3,8 @@ import type { StepRecord } from "./step-record.js";
 export type AgentState =
   | "idle"
   | "running"
-  | "paused"
-  | "completed"
+  | "waiting"
+  | "finished"
   | "failed"
   | "aborted";
 

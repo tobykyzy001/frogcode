@@ -16,8 +16,8 @@ const ALL_STEP_TYPES = ["perceive", "reason", "act", "observe"] as const;
 const ALL_AGENT_STATES = [
   "idle",
   "running",
-  "paused",
-  "completed",
+  "waiting",
+  "finished",
   "failed",
   "aborted",
 ] as const;
@@ -138,8 +138,8 @@ describe("AgentState", () => {
     const states: AgentState[] = [...ALL_AGENT_STATES];
     expect(states).toContain("idle");
     expect(states).toContain("running");
-    expect(states).toContain("paused");
-    expect(states).toContain("completed");
+    expect(states).toContain("waiting");
+    expect(states).toContain("finished");
     expect(states).toContain("failed");
     expect(states).toContain("aborted");
   });

@@ -122,12 +122,12 @@ describe("ExecutionContext", () => {
     expect(ctx.state).toBe("idle");
     sm.transition("running");
     expect(ctx.state).toBe("running");
-    sm.transition("paused");
-    expect(ctx.state).toBe("paused");
+    sm.transition("waiting");
+    expect(ctx.state).toBe("waiting");
     sm.transition("running");
     expect(ctx.state).toBe("running");
-    sm.transition("completed");
-    expect(ctx.state).toBe("completed");
+    sm.transition("finished");
+    expect(ctx.state).toBe("finished");
   });
 
   it("createChild inherits parent config and state machine", () => {

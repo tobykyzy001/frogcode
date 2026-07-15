@@ -18,18 +18,18 @@ describe("AgentStateMachine", () => {
       expect(sm.state).toBe("running");
     });
 
-    it("running → paused", () => {
+    it("running → waiting", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
-      sm.transition("paused");
-      expect(sm.state).toBe("paused");
+      sm.transition("waiting");
+      expect(sm.state).toBe("waiting");
     });
 
-    it("running → completed", () => {
+    it("running → finished", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
-      sm.transition("completed");
-      expect(sm.state).toBe("completed");
+      sm.transition("finished");
+      expect(sm.state).toBe("finished");
     });
 
     it("running → failed", () => {
@@ -46,42 +46,26 @@ describe("AgentStateMachine", () => {
       expect(sm.state).toBe("aborted");
     });
 
-    it("paused → running", () => {
+    it("waiting → running (resume from subagent wait)", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
-      sm.transition("paused");
+      sm.transition("waiting");
       sm.transition("running");
       expect(sm.state).toBe("running");
     });
 
-    it("paused → failed", () => {
+    it("waiting → aborted", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
-      sm.transition("paused");
-      sm.transition("failed");
-      expect(sm.state).toBe("failed");
-    });
-
-    it("paused → aborted", () => {
-      const sm = new AgentStateMachine();
-      sm.transition("running");
-      sm.transition("paused");
+      sm.transition("waiting");
       sm.transition("aborted");
       expect(sm.state).toBe("aborted");
     });
 
-    it("paused → completed", () => {
+    it("finished → idle (reset)", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
-      sm.transition("paused");
-      sm.transition("completed");
-      expect(sm.state).toBe("completed");
-    });
-
-    it("completed → idle (reset)", () => {
-      const sm = new AgentStateMachine();
-      sm.transition("running");
-      sm.transition("completed");
+      sm.transition("finished");
       sm.transition("idle");
       expect(sm.state).toBe("idle");
     });
@@ -105,28 +89,32 @@ describe("AgentStateMachine", () => {
 
   describe("illegal transitions throw InvalidStateTransitionError", () => {
     const illegalCases: [AgentState, AgentState][] = [
-      ["idle", "completed"],
-      ["idle", "paused"],
+      ["idle", "waiting"],
+      ["idle", "finished"],
       ["idle", "failed"],
       ["idle", "aborted"],
       ["idle", "idle"],
-      ["completed", "running"],
-      ["completed", "paused"],
-      ["completed", "failed"],
-      ["completed", "aborted"],
-      ["completed", "completed"],
-      ["failed", "running"],
-      ["failed", "paused"],
-      ["failed", "completed"],
-      ["failed", "aborted"],
-      ["failed", "failed"],
+      ["finished", "running"],
+      ["finished", "waiting"],
+      ["finished", "failed"],
+      ["finished", "aborted"],
+      ["finished", "finished"],
       ["aborted", "running"],
-      ["aborted", "paused"],
-      ["aborted", "completed"],
+      ["aborted", "waiting"],
+      ["aborted", "finished"],
       ["aborted", "failed"],
       ["aborted", "aborted"],
       ["running", "idle"],
       ["running", "running"],
+      ["waiting", "failed"],
+      ["waiting", "waiting"],
+      ["waiting", "finished"],
+      ["waiting", "idle"],
+      ["failed", "running"],
+      ["failed", "aborted"],
+      ["failed", "waiting"],
+      ["failed", "finished"],
+      ["failed", "failed"],
     ];
 
     for (const [from, to] of illegalCases) {
@@ -134,8 +122,8 @@ describe("AgentStateMachine", () => {
         const sm = new AgentStateMachine();
         if (from !== "idle") {
           sm.transition("running");
-          if (from === "paused") sm.transition("paused");
-          if (from === "completed") sm.transition("completed");
+          if (from === "waiting") sm.transition("waiting");
+          if (from === "finished") sm.transition("finished");
           if (from === "failed") sm.transition("failed");
           if (from === "aborted") sm.transition("aborted");
         }
@@ -155,16 +143,16 @@ describe("AgentStateMachine", () => {
 
     it("returns false for illegal transitions", () => {
       const sm = new AgentStateMachine();
-      expect(sm.canTransition("completed")).toBe(false);
-      expect(sm.canTransition("paused")).toBe(false);
+      expect(sm.canTransition("finished")).toBe(false);
+      expect(sm.canTransition("waiting")).toBe(false);
       expect(sm.canTransition("failed")).toBe(false);
       expect(sm.canTransition("aborted")).toBe(false);
     });
 
-    it("returns false for terminal states", () => {
+    it("returns true for reset from terminal states", () => {
       const sm = new AgentStateMachine();
       sm.transition("running");
-      sm.transition("completed");
+      sm.transition("finished");
       expect(sm.canTransition("idle")).toBe(true);
       expect(sm.canTransition("running")).toBe(false);
     });

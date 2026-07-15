@@ -6,7 +6,6 @@ describe('AgentConfig', () => {
     expect(DEFAULT_AGENT_CONFIG.maxSteps).toBe(10)
     expect(DEFAULT_AGENT_CONFIG.stepTimeoutMs).toBe(30000)
     expect(DEFAULT_AGENT_CONFIG.maxRetries).toBe(3)
-    expect(DEFAULT_AGENT_CONFIG.pauseOnFailure).toBe(false)
     expect(DEFAULT_AGENT_CONFIG.metadata).toEqual({})
   })
 
@@ -16,7 +15,6 @@ describe('AgentConfig', () => {
     expect(config.maxSteps).toBe(10)
     expect(config.stepTimeoutMs).toBe(30000)
     expect(config.maxRetries).toBe(3)
-    expect(config.pauseOnFailure).toBe(false)
     expect(config.metadata).toEqual({})
   })
 
@@ -33,12 +31,32 @@ describe('AgentConfig', () => {
       name: 'custom',
       maxSteps: 20,
       stepTimeoutMs: 60000,
-      pauseOnFailure: true,
       metadata: { version: 1 },
     })
     expect(config.maxSteps).toBe(20)
     expect(config.stepTimeoutMs).toBe(60000)
-    expect(config.pauseOnFailure).toBe(true)
     expect(config.metadata).toEqual({ version: 1 })
+  })
+
+  describe('maxRetries validation', () => {
+    it('accepts zero', () => {
+      expect(() => createAgentConfig({ name: 'test', maxRetries: 0 })).not.toThrow()
+    })
+
+    it('accepts positive integers', () => {
+      expect(() => createAgentConfig({ name: 'test', maxRetries: 5 })).not.toThrow()
+    })
+
+    it('rejects negative values', () => {
+      expect(() => createAgentConfig({ name: 'test', maxRetries: -1 })).toThrow(
+        'Invalid maxRetries: -1. Must be a non-negative integer.',
+      )
+    })
+
+    it('rejects non-integer values', () => {
+      expect(() => createAgentConfig({ name: 'test', maxRetries: 1.5 })).toThrow(
+        'Invalid maxRetries: 1.5. Must be a non-negative integer.',
+      )
+    })
   })
 })

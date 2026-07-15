@@ -44,7 +44,6 @@ export class ExecutionLoop {
   #decision: unknown = null;
   #actionResult: unknown = null;
   #done = false;
-  #pauseCause: unknown = null;
 
   constructor(
     private readonly handlers: PRAOHandlers,
@@ -63,7 +62,6 @@ export class ExecutionLoop {
     this.#decision = null;
     this.#actionResult = null;
     this.#done = false;
-    this.#pauseCause = null;
     return this.#execute();
   }
 
@@ -84,7 +82,6 @@ export class ExecutionLoop {
     this.#decision = null;
     this.#actionResult = null;
     this.#done = false;
-    this.#pauseCause = null;
   }
 
   async #execute(): Promise<AgentOutput> {
@@ -150,16 +147,11 @@ export class ExecutionLoop {
           break;
         }
       } catch (error) {
-        // State already changed (pause/abort/fail) during handler execution
-        if (this.#shouldStop()) {
+        // waiting is a normal interruption (subagent coordination) — return steps
+        if (this.stateMachine.state === "waiting") {
           break;
         }
-        // pauseOnFailure: transition to paused instead of propagating error
-        if (this.config.pauseOnFailure) {
-          this.#pauseCause = error;
-          this.stateMachine.transition("paused");
-          break;
-        }
+        // aborted / failed / step errors — propagate to caller
         throw error;
       }
     }
@@ -169,7 +161,7 @@ export class ExecutionLoop {
 
   #shouldStop(): boolean {
     const state = this.stateMachine.state;
-    return state === "paused" || state === "aborted" || state === "failed";
+    return state === "waiting" || state === "aborted" || state === "failed";
   }
 
   async #runStep(
@@ -306,8 +298,8 @@ export class ExecutionLoop {
     if (state === "aborted") {
       throw new AgentAbortedError();
     }
-    if (state === "paused" && this.#pauseCause !== null) {
-      throw this.#pauseCause;
+    if (state === "failed") {
+      throw new Error("Agent execution failed");
     }
     return { steps: [...this.#accumulatedSteps] };
   }

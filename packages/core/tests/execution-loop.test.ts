@@ -284,6 +284,7 @@ describe("ExecutionLoop", () => {
       name: "test",
       maxSteps: 1,
       maxRetries: 3,
+      retryableErrorClassifier: () => true,
     });
     const loop = new ExecutionLoop(
       flakyHandlers,
@@ -325,6 +326,7 @@ describe("ExecutionLoop", () => {
       name: "test",
       maxSteps: 1,
       maxRetries: 2,
+      retryableErrorClassifier: () => true,
     });
     const store = new FileEventStore(tempDir);
     const loop = new ExecutionLoop(
@@ -340,55 +342,6 @@ describe("ExecutionLoop", () => {
     const records = await store.getAll("test-agent");
     const failedStep = records.find((r) => r.metadata.status === "failed");
     expect(failedStep?.metadata.attempt).toBe(3);
-  });
-
-  it("pauses on failure when pauseOnFailure is true, throws original error", async () => {
-    const failingHandlers: PRAOHandlers = {
-      perceive: {
-        async perceive(input: AgentInput) {
-          return { rawInput: input.prompt };
-        },
-      },
-      reason: {
-        async reason() {
-          return { action: "test", done: true };
-        },
-      },
-      act: {
-        async act() {
-          throw new Error("act failed");
-        },
-      },
-      observe: {
-        async observe() {
-          return { content: "never" };
-        },
-      },
-    };
-    const pauseConfig = createAgentConfig({
-      name: "test",
-      maxSteps: 1,
-      maxRetries: 0,
-      pauseOnFailure: true,
-    });
-    const sm = makeStateMachine();
-    const store = new FileEventStore(tempDir);
-    const loop = new ExecutionLoop(
-      failingHandlers,
-      store,
-      pauseConfig,
-      sm,
-    );
-    await expect(
-      loop.run({ prompt: "test" }, makeCtx("pause-fail", sm)),
-    ).rejects.toThrow("act failed");
-
-    expect(sm.state).toBe("paused");
-
-    const records = await store.getAll("pause-fail");
-    const failedStep = records.find((r) => r.metadata.status === "failed");
-    expect(failedStep).toBeDefined();
-    expect(failedStep?.type).toBe("act");
   });
 
   it("throws StepTimeoutError when handler exceeds stepTimeoutMs", async () => {
@@ -442,7 +395,7 @@ describe("ExecutionLoop", () => {
       },
       reason: {
         async reason() {
-          sm.transition("paused");
+          sm.transition("waiting");
           return { action: "test", done: false };
         },
       },
@@ -463,13 +416,13 @@ describe("ExecutionLoop", () => {
       config,
       sm,
     );
-    // Paused before observe — returns steps, state is paused (no error to propagate)
+    // Waiting before observe — returns steps, state is waiting (no error to propagate)
     const result = await loop.run(
       { prompt: "test" },
       makeCtx("inter-step", sm),
     );
 
-    expect(sm.state).toBe("paused");
+    expect(sm.state).toBe("waiting");
     expect(result.steps).toHaveLength(2);
   });
 
@@ -524,7 +477,7 @@ describe("ExecutionLoop", () => {
       perceive: {
         async perceive(input: AgentInput) {
           perceiveCalls++;
-          if (perceiveCalls === 2) sm.transition("paused");
+          if (perceiveCalls === 2) sm.transition("waiting");
           return { rawInput: input.prompt };
         },
       },
@@ -560,7 +513,7 @@ describe("ExecutionLoop", () => {
       makeCtx("resume-test", sm),
     );
     expect(result1.steps).toHaveLength(5);
-    expect(sm.state).toBe("paused");
+    expect(sm.state).toBe("waiting");
 
     sm.transition("running");
     const result2 = await loop.resume();
@@ -638,6 +591,87 @@ describe("ExecutionLoop", () => {
     for (const id of ids) {
       expect(id).toMatch(/^step-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     }
+  });
+
+  it("throws original error when state transitions to failed during execution", async () => {
+    const sm = makeStateMachine();
+    const failingHandlers: PRAOHandlers = {
+      perceive: {
+        async perceive() {
+          sm.transition("failed");
+          throw new Error("perceive failed");
+        },
+      },
+      reason: {
+        async reason() {
+          return { action: "test", done: true };
+        },
+      },
+      act: {
+        async act() {
+          return { result: "done" };
+        },
+      },
+      observe: {
+        async observe() {
+          return { content: "observed" };
+        },
+      },
+    };
+    const loop = new ExecutionLoop(
+      failingHandlers,
+      new FileEventStore(tempDir),
+      config,
+      sm,
+    );
+    await expect(
+      loop.run({ prompt: "test" }, makeCtx("fail-during-exec", sm)),
+    ).rejects.toThrow("perceive failed");
+    expect(sm.state).toBe("failed");
+  });
+
+  it("throws when finalizeExecution detects failed state", async () => {
+    const sm = makeStateMachine();
+    let callCount = 0;
+    const handlers: PRAOHandlers = {
+      perceive: {
+        async perceive(input: AgentInput) {
+          callCount++;
+          if (callCount === 1) {
+            return { rawInput: input.prompt };
+          }
+          // On second call, transition to failed before observe runs
+          sm.transition("failed");
+          return { rawInput: input.prompt };
+        },
+      },
+      reason: {
+        async reason() {
+          return { action: "test", done: false };
+        },
+      },
+      act: {
+        async act() {
+          return { result: "done" };
+        },
+      },
+      observe: {
+        async observe() {
+          return { content: "observed" };
+        },
+      },
+    };
+    const config2 = createAgentConfig({ name: "test", maxSteps: 2 });
+    const loop = new ExecutionLoop(
+      handlers,
+      new FileEventStore(tempDir),
+      config2,
+      sm,
+    );
+    await expect(
+      loop.run({ prompt: "test" }, makeCtx("finalize-fail", sm)),
+    ).rejects.toThrow();
+    expect(sm.state).toBe("failed");
   });
 
   describe("error classification in #runStep", () => {

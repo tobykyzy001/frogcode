@@ -1,6 +1,7 @@
 {
   "name": "frogcode",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "build": "turbo build",
     "test": "turbo test",

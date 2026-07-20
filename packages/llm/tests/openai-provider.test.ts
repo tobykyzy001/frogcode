@@ -497,7 +497,7 @@ describe("OpenAIProvider", () => {
       expect(res.finishReason).toBe("content_filter");
     });
 
-    it("maps HTTP 429 to RateLimitError (retried, ultimately LLMRetryExhaustedError)", async () => {
+    it("maps HTTP 429 with Retry-After: 0 to RateLimitError (retryAfter undefined, falls back to exponential backoff)", async () => {
       vi.useFakeTimers();
       fetchMock.mockResolvedValue(
         new Response("{}", { status: 429, headers: { "Retry-After": "0" } }),
@@ -517,7 +517,10 @@ describe("OpenAIProvider", () => {
       const exhausted = err as LLMRetryExhaustedError;
       expect(exhausted.lastError).toBeInstanceOf(RateLimitError);
       const rateLimit = exhausted.lastError as RateLimitError;
-      expect(rateLimit.retryAfter).toBe(0);
+      // Retry-After: 0 is semantically ambiguous; treated as missing so the
+      // executor falls back to exponential backoff rather than retrying
+      // immediately (0ms) in a tight loop.
+      expect(rateLimit.retryAfter).toBeUndefined();
       expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
     });
 

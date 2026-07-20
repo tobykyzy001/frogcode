@@ -482,7 +482,7 @@ export class OpenAIProvider implements LLMProvider {
       const retryAfterSec = Number(retryAfterHeader);
       return new RateLimitError("OpenAI API rate limited (429)", {
         retryAfter:
-          Number.isFinite(retryAfterSec) && retryAfterSec >= 0
+          Number.isFinite(retryAfterSec) && retryAfterSec > 0
             ? retryAfterSec
             : undefined,
       });

@@ -101,7 +101,8 @@ export class ExecutionLoop {
             agentId,
             "perceive",
             input,
-            () => this.handlers.perceive.perceive(input, ctx),
+            (stepCtx) => this.handlers.perceive.perceive(input, stepCtx),
+            ctx,
           );
           this.#phase = "reason";
         }
@@ -112,7 +113,8 @@ export class ExecutionLoop {
             agentId,
             "reason",
             this.#perception,
-            () => this.handlers.reason.reason(this.#perception, ctx),
+            (stepCtx) => this.handlers.reason.reason(this.#perception, stepCtx),
+            ctx,
           )) as ReasonResult;
           this.#decision = reasonResult.action;
           this.#done = reasonResult.done === true;
@@ -125,19 +127,25 @@ export class ExecutionLoop {
             agentId,
             "act",
             this.#decision,
-            () => this.handlers.act.act(this.#decision, ctx),
+            (stepCtx) => this.handlers.act.act(this.#decision, stepCtx),
+            ctx,
           );
           this.#phase = "observe";
         }
         if (this.#shouldStop()) break;
 
         if (this.#phase === "observe") {
-          await this.#runStep(agentId, "observe", this.#actionResult, () =>
-            this.handlers.observe.observe(
-              this.#decision,
-              this.#actionResult,
-              ctx,
-            ),
+          await this.#runStep(
+            agentId,
+            "observe",
+            this.#actionResult,
+            (stepCtx) =>
+              this.handlers.observe.observe(
+                this.#decision,
+                this.#actionResult,
+                stepCtx,
+              ),
+            ctx,
           );
           this.#phase = "perceive";
         }
@@ -168,7 +176,8 @@ export class ExecutionLoop {
     agentId: string,
     type: StepType,
     input: unknown,
-    fn: () => Promise<unknown>,
+    fn: (ctx: ExecutionContext) => Promise<unknown>,
+    ctx: ExecutionContext,
   ): Promise<unknown> {
     const start = Date.now();
     let lastError: unknown;
@@ -178,8 +187,36 @@ export class ExecutionLoop {
         throw new AgentAbortedError();
       }
 
+      const stepController = new AbortController();
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      if (this.config.stepTimeoutMs > 0) {
+        timeoutId = setTimeout(
+          () =>
+            stepController.abort(
+              new StepTimeoutError(type, this.config.stepTimeoutMs),
+            ),
+          this.config.stepTimeoutMs,
+        );
+      }
+
+      // Propagate agent-level abort to the step controller (single layer, no recursion)
+      const onParentAbort = () => stepController.abort(ctx.signal.reason);
+      if (ctx.signal.aborted) {
+        stepController.abort(ctx.signal.reason);
+      } else {
+        ctx.signal.addEventListener("abort", onParentAbort, { once: true });
+      }
+
       try {
-        const result = await this.#withTimeout(fn(), type);
+        const stepCtx = ctx.withSignal(stepController.signal);
+        // Race handler against stepController abort so that timeout/agent-abort
+        // rejects the await with the abort reason (StepTimeoutError or parent reason).
+        // Pass a factory so we don't invoke the handler (and create an unhandled
+        // promise) when the signal is already aborted.
+        const result = await this.#raceWithSignal(
+          () => fn(stepCtx),
+          stepController.signal,
+        );
         const duration = Date.now() - start;
         const record: StepRecord = {
           id: `step-${randomUUID()}`,
@@ -232,6 +269,9 @@ export class ExecutionLoop {
           throw error;
         }
         // Retryable: continue to next attempt
+      } finally {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
+        ctx.signal.removeEventListener("abort", onParentAbort);
       }
     }
 
@@ -251,19 +291,35 @@ export class ExecutionLoop {
     throw lastError;
   }
 
-  #withTimeout<T>(promise: Promise<T>, type: StepType): Promise<T> {
-    if (this.config.stepTimeoutMs <= 0) return promise;
-
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(
-        () => reject(new StepTimeoutError(type, this.config.stepTimeoutMs)),
-        this.config.stepTimeoutMs,
+  /**
+   * Races a handler factory against the step's AbortSignal. If the signal is
+   * already aborted, the factory is NOT invoked and the returned promise
+   * rejects with `signal.reason` immediately. If the signal aborts while the
+   * handler is running, the promise rejects with `signal.reason`. The handler
+   * promise is NOT cancelled (JavaScript promises cannot be), but a
+   * signal-aware handler can observe `ctx.signal.aborted` and exit early.
+   */
+  #raceWithSignal<T>(
+    factory: () => Promise<T>,
+    signal: AbortSignal,
+  ): Promise<T> {
+    if (signal.aborted) {
+      return Promise.reject(signal.reason);
+    }
+    const promise = factory();
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+      promise.then(
+        (value) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+        (err) => {
+          signal.removeEventListener("abort", onAbort);
+          reject(err);
+        },
       );
-    });
-
-    return Promise.race([promise, timeout]).finally(() => {
-      if (timeoutId !== undefined) clearTimeout(timeoutId);
     });
   }
 

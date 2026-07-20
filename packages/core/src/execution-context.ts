@@ -9,6 +9,7 @@ export class ExecutionContext {
   readonly metadata: Record<string, unknown>;
   readonly createdAt: number;
   readonly parent?: ExecutionContext;
+  readonly signal: AbortSignal;
   readonly #stateMachine: AgentStateMachine;
 
   constructor(opts: {
@@ -17,6 +18,7 @@ export class ExecutionContext {
     stateMachine: AgentStateMachine;
     metadata?: Record<string, unknown>;
     parent?: ExecutionContext;
+    signal?: AbortSignal;
   }) {
     this.agentId = opts.agentId;
     this.config = opts.config;
@@ -24,6 +26,7 @@ export class ExecutionContext {
     this.metadata = opts.metadata ?? {};
     this.createdAt = Date.now();
     this.parent = opts.parent;
+    this.signal = opts.signal ?? new AbortController().signal;
   }
 
   get state(): AgentState {
@@ -55,6 +58,22 @@ export class ExecutionContext {
       stateMachine: this.#stateMachine,
       metadata: { ...this.metadata },
       parent: this,
+    });
+  }
+
+  /**
+   * Returns a new context with the same agentId, config, stateMachine, and
+   * inherited metadata, but with the `signal` replaced. Unlike createChild,
+   * this does NOT set `parent` (shallow copy semantics — the new context is a
+   * peer, not a sub-scope).
+   */
+  withSignal(signal: AbortSignal): ExecutionContext {
+    return new ExecutionContext({
+      agentId: this.agentId,
+      config: this.config,
+      stateMachine: this.#stateMachine,
+      metadata: { ...this.metadata },
+      signal,
     });
   }
 

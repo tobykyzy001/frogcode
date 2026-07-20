@@ -1,6 +1,8 @@
 import { pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { registerChatCommand } from "./commands/chat.js";
+import { registerConfigCommand } from "./commands/config.js";
+import { registerTraceCommand } from "./commands/trace.js";
 
 export function createProgram(): Command {
   const program = new Command();
@@ -10,6 +12,8 @@ export function createProgram(): Command {
     .version("0.1.0");
 
   registerChatCommand(program);
+  registerTraceCommand(program);
+  registerConfigCommand(program);
   return program;
 }
 

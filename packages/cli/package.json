@@ -1,10 +1,9 @@
 {
-  "name": "@frogcode/core",
-  "version": "0.0.1",
+  "name": "@frogcode/cli",
+  "version": "0.1.0",
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     }
@@ -12,13 +11,19 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
+  "bin": {
+    "frogcode": "./dist/index.mjs"
+  },
+  "files": ["dist"],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "lint": "biome check src/"
+  },
+  "dependencies": {
+    "@frogcode/core": "workspace:*",
+    "@frogcode/llm": "workspace:*",
+    "commander": "^12"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9",

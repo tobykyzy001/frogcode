@@ -2,7 +2,11 @@ export * from "./types/index.js";
 export type { EventStore } from "./event-store/types.js";
 export { FileEventStore } from "./event-store/file.js";
 export { ExecutionContext } from "./execution-context.js";
-export { isRetryableError } from "./errors.js";
+export {
+  isRetryableError,
+  isRetryExhausted,
+} from "./errors.js";
+export type { RetryExhaustedMarker } from "./errors.js";
 export {
   AgentStateMachine,
   InvalidStateTransitionError,

@@ -16,6 +16,9 @@ coverage
 .sisyphus
 .opencode
 
+# FrogCode runtime data (EventStore sessions, etc.)
+.frogcode
+
 # Project planning (internal)
 ROADMAP.md
 

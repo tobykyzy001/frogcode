@@ -1,4 +1,10 @@
-export type StepType = "perceive" | "reason" | "act" | "observe";
+export type StepType =
+  | "perceive"
+  | "reason"
+  | "act"
+  | "observe"
+  | "tool_call"
+  | "tool_result";
 
 export interface StepRecord {
   id: string;

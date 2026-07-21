@@ -1,6 +1,6 @@
 import type { PromptTemplate } from "../prompt/template.js";
 import type { SchemaValidator } from "../schema/types.js";
-import type { ToolDefinition } from "../types/index.js";
+import type { ToolCall, ToolDefinition } from "../types/index.js";
 
 /**
  * Options for {@link createLLMHandlers}.
@@ -19,6 +19,18 @@ import type { ToolDefinition } from "../types/index.js";
  *
  * `tools` is forwarded to the LLM on every `reason` call so the model can
  * decide whether to emit tool calls.
+ *
+ * `toolRegistry`, when set, is the preferred way to supply tools: the reason
+ * handler calls `toolRegistry.toLLMTools()` on every `reason` invocation and
+ * passes the resulting array as the `tools` field of the {@link ChatRequest}.
+ * Typed structurally (no `@frogcode/tools` import) so the LLM bridge stays a
+ * pure protocol layer. When both `toolRegistry` and `tools` are set,
+ * `toolRegistry` takes precedence.
+ *
+ * `onToolCall` is an optional hook invoked once per tool call emitted by the
+ * LLM. Used by the CLI for real-time visualization (e.g. printing
+ * "[tool: fs.read] calling..."). It is a pure observer — it cannot mutate the
+ * tool call.
  */
 export interface LLMHandlersOptions {
   model: string;
@@ -26,6 +38,10 @@ export interface LLMHandlersOptions {
   schemaValidator?: SchemaValidator;
   maxValidationAttempts?: number;
   tools?: ToolDefinition[];
+  toolRegistry?: {
+    toLLMTools: () => ToolDefinition[];
+  };
+  onToolCall?: (call: ToolCall) => void;
 }
 
 /**

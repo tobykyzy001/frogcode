@@ -47,6 +47,8 @@ export class LLMReasonHandler implements ReasonHandler {
   private readonly schemaValidator?: SchemaValidator;
   private readonly maxValidationAttempts: number;
   private readonly tools?: ToolDefinition[];
+  private readonly toolRegistry?: { toLLMTools: () => ToolDefinition[] };
+  private readonly onToolCall?: (call: ToolCall) => void;
 
   constructor(provider: LLMProvider, opts: LLMHandlersOptions) {
     this.provider = provider;
@@ -56,6 +58,8 @@ export class LLMReasonHandler implements ReasonHandler {
     this.maxValidationAttempts =
       opts.maxValidationAttempts ?? DEFAULT_MAX_VALIDATION_ATTEMPTS;
     this.tools = opts.tools;
+    this.toolRegistry = opts.toolRegistry;
+    this.onToolCall = opts.onToolCall;
   }
 
   async reason(
@@ -67,6 +71,11 @@ export class LLMReasonHandler implements ReasonHandler {
 
     const toolCalls = res.toolCalls;
     if (toolCalls && toolCalls.length > 0) {
+      if (this.onToolCall) {
+        for (const call of toolCalls) {
+          this.onToolCall(call);
+        }
+      }
       const action = await this.resolveToolAction(
         toolCalls[0],
         perception,
@@ -86,6 +95,7 @@ export class LLMReasonHandler implements ReasonHandler {
     ctx: ExecutionContext,
   ): ChatRequest {
     const content = this.renderContent(perception);
+    const tools = this.resolveTools();
     return {
       messages: [
         {
@@ -96,7 +106,7 @@ export class LLMReasonHandler implements ReasonHandler {
         },
       ],
       model: this.model,
-      ...(this.tools ? { tools: this.tools } : {}),
+      ...(tools ? { tools } : {}),
     };
   }
 
@@ -105,6 +115,21 @@ export class LLMReasonHandler implements ReasonHandler {
       return this.reasonTemplate.render({ perception });
     }
     return stringifyPerception(perception);
+  }
+
+  /**
+   * Resolve the tool list for the next ChatRequest.
+   *
+   * `toolRegistry` (when set) takes precedence over the static `tools` array
+   * — the registry is invoked on every request so it always reflects the
+   * current set of registered tools. Falls back to `tools` when no registry
+   * is provided (preserving backward compatibility with the existing option).
+   */
+  private resolveTools(): ToolDefinition[] | undefined {
+    if (this.toolRegistry) {
+      return this.toolRegistry.toLLMTools();
+    }
+    return this.tools;
   }
 
   private async resolveToolAction(
@@ -158,6 +183,7 @@ export class LLMReasonHandler implements ReasonHandler {
       errorLines,
       "Please return corrected tool call arguments.",
     ].join("\n");
+    const tools = this.resolveTools();
 
     return {
       messages: [
@@ -169,7 +195,7 @@ export class LLMReasonHandler implements ReasonHandler {
         },
       ],
       model: this.model,
-      ...(this.tools ? { tools: this.tools } : {}),
+      ...(tools ? { tools } : {}),
     };
   }
 }

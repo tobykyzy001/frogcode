@@ -22,6 +22,12 @@ coverage
 # Project planning (internal)
 ROADMAP.md
 
+# Env files (never commit secrets)
+.env
+.env.local
+.env.*.local
+.env.*
+
 # OS files
 .DS_Store
 Thumbs.db

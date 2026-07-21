@@ -131,10 +131,10 @@ describe("formatConfig", () => {
     const output = formatConfig({
       ...baseInfo,
       apiKeySet: true,
-      baseUrl: "http://10.9.191.200/v1",
+      baseUrl: "http://your-gateway/v1",
     });
     expect(output).toContain("Base URL:");
-    expect(output).toContain("http://10.9.191.200/v1");
+    expect(output).toContain("http://your-gateway/v1");
   });
 });
 

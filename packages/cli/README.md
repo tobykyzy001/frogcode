@@ -45,7 +45,7 @@ frogcode chat "写一个快排" --model gpt-4o
 frogcode chat "你好" --provider anthropic --model claude-3-5-sonnet
 
 # 用本地 OpenAI 兼容 gateway
-$env:FROGCODE_BASE_URL = "http://10.9.191.200/v1"
+$env:FROGCODE_BASE_URL = "http://your-gateway/v1"
 $env:OPENAI_API_KEY = "sk-..."
 frogcode chat "你好" --model GLM-5.2
 
@@ -138,7 +138,7 @@ FrogCode Configuration
 Provider:  openai
 Model:     gpt-4o-mini
 API Key:   ✓ (OPENAI_API_KEY)
-Base URL:  http://10.9.191.200/v1
+Base URL:  http://your-gateway/v1
 Events:    .frogcode/events/
 ```
 

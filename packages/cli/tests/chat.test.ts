@@ -428,14 +428,14 @@ describe("chat command", () => {
         "chat",
         "hello",
         "--base-url",
-        "http://10.9.191.200/v1",
+        "http://your-gateway/v1",
         "--no-stream",
       ]);
 
       expect(OpenAIProvider).toHaveBeenCalledWith({
         apiKey: "test-key",
         model: "gpt-4o-mini",
-        baseURL: "http://10.9.191.200/v1",
+        baseURL: "http://your-gateway/v1",
       });
     });
 

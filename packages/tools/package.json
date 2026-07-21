@@ -1,0 +1,34 @@
+{
+  "name": "@frogcode/tools",
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "lint": "biome check src/"
+  },
+  "dependencies": {
+    "@frogcode/core": "workspace:*",
+    "@frogcode/llm": "workspace:*",
+    "fast-glob": "^3",
+    "zod": "^3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9",
+    "@types/node": "^26.0.0",
+    "tsup": "^8",
+    "vitest": "^2"
+  }
+}

@@ -23,6 +23,7 @@
   "dependencies": {
     "@frogcode/core": "workspace:*",
     "@frogcode/llm": "workspace:*",
+    "@frogcode/tools": "workspace:*",
     "commander": "^12"
   },
   "devDependencies": {

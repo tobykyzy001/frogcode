@@ -17,7 +17,8 @@
 | Phase 1 | 核心运行时（PRAO 循环、状态机、事件溯源） | ✅ M1 完成 |
 | Phase 2 | LLM 网关（OpenAI/Anthropic、流式、Token 预算、Schema 校验） | ✅ M2 完成 |
 | Phase 2.5 | 最小 CLI（chat / trace / config 命令） | ✅ M2.5 完成 |
-| Phase 3+ | 工具系统、记忆、规划、编排、Web 界面 | 🚧 规划中 |
+| Phase 3 | 工具系统（ToolDefinition、Registry、Permission、ForkSandbox、4 个内置工具） | ✅ M3 完成 |
+| Phase 4+ | 记忆、规划、编排、Web 界面 | 🚧 规划中 |
 
 ## 快速开始
 
@@ -91,7 +92,7 @@ frogcode/
 │   ├── core/            # 核心运行时（PRAO 循环、状态机、事件溯源）
 │   ├── llm/             # LLM 网关（Provider 抽象、OpenAI/Anthropic 适配器）
 │   ├── cli/             # 命令行工具（chat / trace / config）
-│   ├── tools/           # 工具系统（Phase 3，未开始）
+│   ├── tools/           # 工具系统（Phase 3，已完成）
 │   ├── memory/          # 记忆系统（Phase 4，未开始）
 │   ├── planner/         # 规划引擎（Phase 5，未开始）
 │   ├── orchestrator/    # 多 Agent 编排（Phase 6，未开始）

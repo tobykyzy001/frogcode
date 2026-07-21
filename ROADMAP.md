@@ -138,12 +138,12 @@ frogcode/
 **目标**：声明式工具注册 + 类型安全调用 + 沙箱执行
 
 **交付物**：
-- [ ] P3.1 工具定义 schema：`ToolDefinition`（输入/输出 JSON Schema + 描述，Mastra 模式：inputSchema/outputSchema/execute/permission/timeout）
-- [ ] P3.2 工具注册表 (`ToolRegistry`)：注册、发现、校验
-- [ ] P3.3 工具调用管线：解析 → 校验 → 权限 → 沙箱执行 → 后处理（含 LLM 多 tool_call 并行调度 + 结构化错误传播 + 可观测 hooks）
-- [ ] P3.4 内置工具集：文件读写、Shell 执行、HTTP 请求、本地搜索（grep/glob）；Web 搜索经评估延后——所有稳定 Web 搜索 API（Bing Search API 已于 2025-08-11 停用）均需 API key，违背"不绑定外部服务"原则，HTTP 工具天然覆盖该场景
-- [ ] P3.5 权限模型：工具级 `Permission`（allow / deny / confirm），Claude Code 风格 7 层管线 + `canUseTool` 回调统一处理交互/程序化两种模式
-- [ ] P3.6 沙箱执行：`child_process.fork` 进程隔离 + 资源限制（默认超时 60s 作为 `ToolDefinition` 一部分提供给 LLM + 内存限制 `--max-old-space-size` + SIGTERM→SIGKILL 级联）
+- [x] P3.1 工具定义 schema：`ToolDefinition`（输入/输出 JSON Schema + 描述，Mastra 模式：inputSchema/outputSchema/execute/permission/timeout）
+- [x] P3.2 工具注册表 (`ToolRegistry`)：注册、发现、校验
+- [x] P3.3 工具调用管线：解析 → 校验 → 权限 → 沙箱执行 → 后处理（含 LLM 多 tool_call 并行调度 + 结构化错误传播 + 可观测 hooks）
+- [x] P3.4 内置工具集：文件读写、Shell 执行、HTTP 请求、本地搜索（grep/glob）；Web 搜索经评估延后——所有稳定 Web 搜索 API（Bing Search API 已于 2025-08-11 停用）均需 API key，违背"不绑定外部服务"原则，HTTP 工具天然覆盖该场景
+- [x] P3.5 权限模型：工具级 `Permission`（allow / deny / confirm），Claude Code 风格 7 层管线 + `canUseTool` 回调统一处理交互/程序化两种模式
+- [x] P3.6 沙箱执行：`child_process.fork` 进程隔离 + 资源限制（默认超时 60s 作为 `ToolDefinition` 一部分提供给 LLM + 内存限制 `--max-old-space-size` + SIGTERM→SIGKILL 级联）
 
 > ⚠️ **范围调整说明**：原 P3.7"工具组合（管道式 + DAG 式编排）"已移到 Phase 5 (Planner) 实现。理由：4 个研究 agent 一致判断——工具子系统应是"可靠执行器"而非"工作流引擎"，DAG 编排属于任务规划范畴，与 Phase 5 `ExecutionPlan` DAG 概念重叠。Phase 3 的"工具组合"重新定义为：LLM 多 tool_call 并行调度 + 结构化错误传播 + 可观测 hooks（已合并到 P3.3）。
 >
@@ -156,6 +156,8 @@ frogcode/
 - 内置工具集可完成基础文件操作和网络请求
 - timeout 参数作为 ToolDefinition 一部分提供给 LLM，让 LLM 知道工具调用时间限制
 - 权限"don't ask again"持久化为 glob 规则（带过期），跨会话生效
+
+> ✅ **M3 里程碑完成** — Phase 3 工具系统已交付（ToolDefinition、ToolRegistry、PermissionEngine、ForkSandbox、4 个内置工具、PRAO 集成、CLI --tool flag）
 
 ---
 
